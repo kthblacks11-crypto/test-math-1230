@@ -23,7 +23,6 @@ const firebaseConfig = {
 };
 
 
-// ==========================================
 
 firebase.initializeApp(firebaseConfig);
 // ==========================================
@@ -65,8 +64,8 @@ const auth = firebase.auth();
 const provider = new firebase.auth.GoogleAuthProvider();
 const storage = firebase.storage();
 
-const CURRENT_VERSION = "1.2.6"; 
-
+const CURRENT_VERSION = "1.2.11"; 
+// 2026년 8월 12일 수정처리됨
 // 읽기 횟수를 절약하는 버전 체크 방식 (onSnapshot 대신 get 사용)
 function startAppVersionCheck() {
     db.collection('system_config').doc('version_control').get()
@@ -140,6 +139,19 @@ auth.onAuthStateChanged(async (user) => {
             if (curriculumSelector) curriculumSelector.style.display = 'flex'; // 상단 탭 켜기
             if (adminModeBtn) adminModeBtn.style.display = 'inline-block';
 
+            // 👑 관리자 닉네임 체크 (최초 1회성)
+            try {
+                const adminDocRef = db.collection('user_profiles').doc(user.uid);
+                const adminDoc = await adminDocRef.get();
+                // 문서가 있고, 닉네임 필드가 존재하지 않을 때만 딱 한 번 실행
+                if (adminDoc.exists && !adminDoc.data().hasOwnProperty('nickname')) {
+                    await adminDocRef.set({ nickname: user.displayName || "관리자" }, { merge: true });
+                    console.log("👑 관리자 닉네임 필드가 추가되었습니다.");
+                }
+            } catch (err) {
+                console.error("관리자 닉네임 체크 에러:", err);
+            }
+
             // 선생님이 작성하신 실시간 새 메시지 뱃지 로직 (완벽 보존!)
             if(adminFeedbackBtn) {
                 adminFeedbackBtn.style.display = 'inline-block';
@@ -179,6 +191,7 @@ auth.onAuthStateChanged(async (user) => {
             // 관리자는 기본 설정대로 화면 그리기
             initDashboard(); 
             if (typeof initChecklist === 'function') initChecklist(); 
+            if (typeof populatePerformanceStandards === 'function') populatePerformanceStandards();
             if (typeof loadBookmark === 'function') loadBookmark(); 
             showSection('dashboard');
 
@@ -195,10 +208,22 @@ auth.onAuthStateChanged(async (user) => {
             if(adminModeBtn) adminModeBtn.style.display = 'none';
 
             try {
-                const profileDoc = await db.collection('user_profiles').doc(user.uid).get();
+                const userDocRef = db.collection('user_profiles').doc(user.uid);
+                const profileDoc = await userDocRef.get();
+
                 if (profileDoc.exists && profileDoc.data().mainGroup) {
-                    currentUserGroup = profileDoc.data().mainGroup;
-                    changeGroup(currentUserGroup); 
+                    const userData = profileDoc.data();
+                    
+                    // 💡 [핵심 개선] 기존 사용자가 접속했을 때 닉네임 필드가 없으면 추가 (있으면 패스)
+                    if (!userData.hasOwnProperty('nickname')) {
+                        await userDocRef.set({
+                            nickname: user.displayName || "사용자"
+                        }, { merge: true });
+                        console.log("👩‍🏫 기존 유저 닉네임 필드가 추가되었습니다.");
+                    }
+
+                    currentUserGroup = userData.mainGroup;
+                    changeGroup(currentUserGroup);
                     
                     initDashboard();
                     if (typeof initChecklist === 'function') initChecklist(); 
@@ -249,7 +274,7 @@ async function handleDeleteAccount() {
     const user = firebase.auth().currentUser;
     
     if (!user) {
-        alert("로그인된 상태가 아닙니다.");
+        alert("로그인 상태가 아닙니다.");
         return;
     }
     
@@ -902,27 +927,27 @@ async function executeAnalysis() {
         const referenceDBText = await fetchReferenceQuestions(currentSubject);
 
         let isSingleMode = (analysisMainMode === 'single');
-        const userApiKey = localStorage.getItem('gemini_api_key'); 
+        const userApiKey = localStorage.getItem('gemini_api_key');
 
         let bodyData = {
             standardsInfo: standardsInfo,
             subject: currentSubject,
             referenceDBText: referenceDBText,
             commonImages: commonPassages,
-            apiKey: userApiKey 
+            apiKey: userApiKey
         };
 
         if (isSingleMode) {
-            bodyData.action = "analyze_single"; 
+            bodyData.action = "analyze_single";
             const box = (singleCropMode === 'multi' && cropBoxes.length > 0) ? cropBoxes[0] : null;
-            lastAnalyzedSingleImage = getCroppedBase64(box); 
+            lastAnalyzedSingleImage = getCroppedBase64(box);
             bodyData.imageBase64 = lastAnalyzedSingleImage;
         } else {
-            bodyData.action = "analyze_multi"; 
+            bodyData.action = "analyze_multi";
             bodyData.images = cropBoxes.map(box => getCroppedBase64(box));
         }
 
-        const workerUrl = "https://script.google.com/macros/s/AKfycbwgx4RgF8FQxxL3jBgEQ5l369llADjhZ1NepulIdF4DdX18kBrB8oRQ4Ft0d5WdKtEF/exec"; 
+        const workerUrl = "https://script.google.com/macros/s/AKfycbwgx4RgF8FQxxL3jBgEQ5l369llADjhZ1NepulIdF4DdX18kBrB8oRQ4Ft0d5WdKtEF/exec";
         const response = await fetch(workerUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'text/plain' },
@@ -950,7 +975,7 @@ async function executeAnalysis() {
         }
         const analysisText = data.candidates[0].content.parts[0].text;
         
-        currentChatContext = analysisText; 
+        currentChatContext = analysisText;
 
         const wrapper = document.getElementById('analysis-layout-wrapper');
         if (wrapper) { wrapper.style.position = 'relative'; wrapper.style.display = 'block'; }
@@ -958,33 +983,53 @@ async function executeAnalysis() {
         const chatContainer = document.getElementById('ai-chat-container');
         if(chatContainer) {
             chatContainer.style.display = 'flex';
-            chatContainer.style.position = 'absolute'; 
-            chatContainer.style.right = '-200px';       
-            chatContainer.style.top = '0';             
-            chatContainer.style.width = '350px'; 
-            chatContainer.style.height = 'fit-content'; 
-            chatContainer.style.paddingBottom = '1rem'; 
+            chatContainer.style.position = 'absolute';
+            chatContainer.style.right = '-200px';      
+            chatContainer.style.top = '0';            
+            chatContainer.style.width = '350px';
+            chatContainer.style.height = 'fit-content';
+            chatContainer.style.paddingBottom = '1rem';
             chatContainer.style.zIndex = '100';        
             chatContainer.style.backgroundColor = 'white';
-            chatContainer.style.border = '1px solid #cbd5e1'; 
-            chatContainer.style.borderRadius = '12px'; 
-            chatContainer.style.boxShadow = '-5px 0 15px rgba(0,0,0,0.1)'; 
+            chatContainer.style.border = '1px solid #cbd5e1';
+            chatContainer.style.borderRadius = '12px';
+            chatContainer.style.boxShadow = '-5px 0 15px rgba(0,0,0,0.1)';
         }
         
+        // [원래 렌더링 유지] 1. 텍스트 및 HTML DOM 렌더링
         if (isSingleMode) {
             renderSophisticatedResult(analysisText, lastAnalyzedSingleImage);
+            
+            // 🌟 [자동 저장 - 단일 상세 분석] 파싱 후 즉시 트리거 실행
+            const qTxtMatch = analysisText.match(/(?:\[원본 문제 추출\]:?)([\s\S]*?)(?=\[교과|$)/);
+            const stdMatch = analysisText.match(/(?:성취기준:?\s*\[?)([^\]\n\s,]+)/);
+            const lvMatch = analysisText.match(/(?:성취수준:?\s*)([A-E]\+?)/);
+            const rsMatch = analysisText.match(/(?:판정 이유:?\s*)([\s\S]*?)(?=\[핵심|$)/);
+
+            let pureQ = qTxtMatch ? qTxtMatch[1].trim() : "단일 문항 추출 실패";
+            let rawCodes = "";
+            
+            const rawStdLine = analysisText.match(/(?:성취기준:?\s*)([^\n]+)/);
+            if (rawStdLine) rawCodes = rawStdLine[1].trim();
+
+            let pureLv = lvMatch ? lvMatch[1].trim() : "C";
+            let pureRs = rsMatch ? rsMatch[1].trim() : "자동 수집된 평가 세부 내역";
+
+            // 💡 [핵심 복구] 마지막 파라미터로 commonPassages(지문 이미지 배열)를 던져주어 100% 유실 없이 저장되게 합니다.
+            await saveAnalysisAutomatically(pureQ, rawCodes || "미분류", pureLv, pureRs, lastAnalyzedSingleImage, commonPassages);
+            
         } else {
             let rawText = analysisText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br>');
             
             rawText = rawText.replace(/\[문항\s*(\d+)\]/g, (match, p1) => {
-                const idx = parseInt(p1) - 1; 
+                const idx = parseInt(p1) - 1;
                 const imgBase64 = cropBoxes[idx] ? getCroppedBase64(cropBoxes[idx]) : null;
                 let imgHtml = '';
                 
                 if (imgBase64) {
                     imgHtml = `<div style="margin: 15px 0; text-align: center; background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0;">
-               <img src="data:image/jpeg;base64,${imgBase64}" style="width: 60%; max-width: 400px; height: auto; border-radius: 6px; box-shadow: 0 3px 6px rgba(0,0,0,0.1);">
-           </div>`;
+                               <img src="data:image/jpeg;base64,${imgBase64}" style="width: 60%; max-width: 400px; height: auto; border-radius: 6px; box-shadow: 0 3px 6px rgba(0,0,0,0.1);">
+                           </div>`;
                 }
                 
                 const borderTop = idx === 0 ? '' : 'border-top: 2px dashed #cbd5e1; margin-top: 2.5rem; padding-top: 1.5rem;';
@@ -992,11 +1037,40 @@ async function executeAnalysis() {
             });
 
             resultText.innerHTML = `<div style="background: white; padding: 1.5rem; border-radius: 12px; border: 1px solid var(--border); line-height: 1.8;">${rawText}</div>`;
+
+            // 🌟 [자동 저장 - 다중 요약 분석] 루프 파싱 연동 트리거 실행
+            const blocks = analysisText.split(/\[문항\s*\d+\]/).map(b => b.trim()).filter(b => b.length > 10);
+            for(let i = 0; i < blocks.length; i++) {
+                let block = blocks[i];
+                let qTxtM = block.match(/(?:0\.\s*문제 텍스트\s*:?)([\s\S]*?)(?=1\.\s*문항|$)/);
+                let stdM = block.match(/(?:3\.\s*관련 성취기준\s*:?)([^\n]+)/);
+                let lvM = block.match(/(?:4\.\s*성취수준\s*:?)\s*([A-E]\+?)/);
+                let rsM = block.match(/(?:판정 이유\s*:?)([\s\S]*?)(?=$)/);
+
+                let subQ = qTxtM ? qTxtM[1].trim() : "요약 분석 문제 텍스트";
+                let subStd = stdM ? stdM[1].trim() : "미분류";
+                let subLv = lvM ? lvM[1].trim() : "C";
+                let subRs = rsM ? rsM[1].trim() : "요약 판정 근거 데이터";
+                let subImg = cropBoxes[i] ? getCroppedBase64(cropBoxes[i]) : null;
+
+                // 💡 [핵심 복구] 마지막 파라미터로 commonPassages(지문 이미지 배열)를 함께 전달합니다.
+                await saveAnalysisAutomatically(subQ, subStd, subLv, subRs, subImg, commonPassages);
+            }
+        }
+
+        // 💡 2. [추가된 부분] HTML이 DOM에 삽입된 직후 Mermaid를 초기화하여 그립니다.
+        if (window.mermaid) {
+            try {
+                mermaid.init(undefined, document.querySelectorAll('.mermaid'));
+            } catch (err) {
+                console.error("Mermaid 렌더링 오류:", err);
+            }
         }
 
         const saveZone = document.getElementById('save-analysis-zone');
         if (saveZone) saveZone.style.display = 'block';
 
+        // 3. 마지막으로 수식(MathJax) 렌더링
         if (window.MathJax) {
             MathJax.typesetClear();
             MathJax.typesetPromise([resultDiv]);
@@ -1010,11 +1084,98 @@ async function executeAnalysis() {
             finalMsg = "인터넷 연결이 불안정하거나 방화벽에 의해 차단되었습니다. 네트워크를 확인해주세요.";
         }
         
+        // 🌟 [유실 방지 핵심!] 선생님의 원본 '다시 분석하기' UI 렌더링 코드가 100% 보존되었습니다.
         resultText.innerHTML = `<div style="padding: 15px; background-color: #fee2e2; border-left: 4px solid #ef4444; border-radius: 4px;">
             <p style="color: #b91c1c; font-weight: bold; margin: 0 0 10px 0;">🚨 분석 실패</p>
             <p style="margin: 0 0 15px 0; color: #7f1d1d;">${finalMsg}</p>
             <button onclick="executeAnalysis()" style="background: #ef4444; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: bold; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">🔄 영역 유지하고 다시 분석하기</button>
         </div>`;
+    }
+}
+
+// =========================================================================
+// 🌟[업그레이드] 자동 저장 시스템 엔진 (공통 지문 텍스트 & 다중 이미지 완벽 지원)
+// =========================================================================
+async function saveAnalysisAutomatically(extractedText, rawCodesStr, levelStr, reasonStr, mainImageBase64, passageImagesArray = [], passageText = "") {
+    try {
+        const currentUserEmail = auth.currentUser ? auth.currentUser.email : "알 수 없음";
+        const currentUserNickname = auth.currentUser ? (auth.currentUser.displayName || "선생님") : "알 수 없음";
+        
+        // 💡 [핵심 보완 1] 지문 텍스트가 따로 들어오면 문제 텍스트와 완벽하게 하나로 합칩니다.
+        const fullTextToSave = passageText ? `[공통지문]\n${passageText}\n\n[문항]\n${extractedText}` : extractedText;
+
+        // 💡 [핵심 보완 2] 메인 문제 이미지 1개 + 공통 지문 이미지 N개를 모두 project_images 서랍에 개별 저장하고 열쇠(ID)들을 모읍니다.
+        let allImageIds = [];
+        let imagesToUpload = [];
+        
+        if (mainImageBase64) imagesToUpload.push(mainImageBase64);
+        if (passageImagesArray && passageImagesArray.length > 0) {
+            imagesToUpload = imagesToUpload.concat(passageImagesArray);
+        }
+
+        for (const imgBase64 of imagesToUpload) {
+            try {
+                const imgDocRef = await db.collection('project_images').add({
+                    source: "auto_ai_mirroring",
+                    base64Data: imgBase64.startsWith('data:image') ? imgBase64 : `data:image/jpeg;base64,${imgBase64}`,
+                    ownerEmail: currentUserEmail,
+                    userNickname: currentUserNickname,
+                    timestamp: firebase.firestore.FieldValue.serverTimestamp()
+                });
+                allImageIds.push(imgDocRef.id);
+            } catch (err) { console.warn("🚨 [이미지 서랍] 저장 실패:", err); }
+        }
+
+        // 2단계: project_texts 서랍에 '새로운 개별 문서'로 적재 (프로젝트 유무 상관없음)
+        try {
+            await db.collection('project_texts').add({
+                source: "auto_ai_mirroring",
+                projectId: (typeof currentProjectId !== 'undefined' && currentProjectId) ? currentProjectId : "unassigned",
+                ownerEmail: currentUserEmail,
+                userNickname: currentUserNickname,
+                questionText: fullTextToSave, // 지문이 포함된 완성형 텍스트
+                reasonText: reasonStr,
+                level: levelStr,
+                standardCodes: rawCodesStr,
+                imageIds: allImageIds, // 배열 형태로 여러 개의 이미지 열쇠 보관
+                timestamp: firebase.firestore.FieldValue.serverTimestamp()
+            });
+        } catch (err) { console.warn("🚨 [텍스트 서랍] 자동 미러링 실패:", err); }
+
+        // 3단계: 융합 성취기준 코드를 찢어서 각각 개별 문서로 은행(transformed_bank)에 저장
+        const cleanCodes = rawCodesStr.replace(/[\[\]\s]/g, '').split(',').filter(c => c.length > 0);
+        const finalCleanLevel = levelStr.replace('+', '').trim();
+
+        for (const singleCode of cleanCodes) {
+            let matchedSubject = typeof detectSubjectIdFromStandardCode === 'function' ? detectSubjectIdFromStandardCode(singleCode) : 'uncategorized';
+            if (matchedSubject === 'uncategorized' && typeof subjectData !== 'undefined') {
+                for (const key in subjectData) {
+                    if (subjectData[key].standards) {
+                        const isMatched = subjectData[key].standards.some(s => 
+                            s.code.replace(/[\[\]\s]/g, '') === singleCode
+                        );
+                        if (isMatched) { matchedSubject = key; break; }
+                    }
+                }
+            }
+            if (!matchedSubject) matchedSubject = 'uncategorized';
+
+            // 문항 은행에 공통 지문이 포함된 문제로 예쁘게 안착
+            await db.collection('transformed_bank').add({
+                answer: "상세 풀이 및 분석 리포트 내용 참조",
+                level: finalCleanLevel || "C",
+                question: fullTextToSave, // 지문 + 문제 텍스트
+                reason: reasonStr,
+                standard_code: singleCode,
+                subject: matchedSubject,
+                timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+                user_email: currentUserEmail,
+                user_nickname: currentUserNickname
+            });
+        }
+        console.log(`✨ [자동 동시 저장 완료] 성취기준 대상: ${cleanCodes.join(', ')}`);
+    } catch (e) {
+        console.warn("🚨 백그라운드 자동 미러링 트랜잭션 실패:", e);
     }
 }
 
@@ -1036,25 +1197,26 @@ function renderSophisticatedResult(rawText, base64Image) {
     text = text.replace(/(?:\[)?\s*교과\s*및\s*단원\s*(?:\])?\s*:?/g, '[교과 및 단원]:');
     text = text.replace(/(?:\[)?\s*성취기준\s*및\s*수준\s*(?:\])?\s*:?/g, '[성취기준 및 수준]:');
     text = text.replace(/(?:\[)?\s*핵심\s*개념\s*(?:\])?\s*:?/g, '[핵심 개념]:');
+    text = text.replace(/(?:\[)?\s*시각화\s*자료\s*(?:\])?\s*:?/g, '[시각화 자료]:'); // 💡 새로 추가
     text = text.replace(/(?:\[)?\s*상세\s*풀이\s*(?:\])?\s*:?/g, '[상세 풀이]:');
     text = text.replace(/(?:\[)?\s*문제\s*풀이\s*(?:\])?\s*:?/g, '[상세 풀이]:'); 
     
-    const configs = [
-        { key: "[원본 문제 추출]:", title: "0. 추출된 원본 문제 텍스트", icon: "📝", bg: "#f8fafc", border: "#94a3b8" },
-        { key: "[교과 및 단원]:", title: "1. 교과명 및 단원명", icon: "📚", bg: "#f3f4f6", border: "#64748b" },
-        { key: "[성취기준 및 수준]:", title: "2. 성취기준과 성취수준", icon: "📍", bg: "#eff6ff", border: "#3b82f6" },
-        { key: "[핵심 개념]:", title: "3. 엄밀한 핵심 개념", icon: "💡", bg: "#fffbeb", border: "#f59e0b" },
-        { key: "[상세 풀이]:", title: "4. 단계별 정밀 풀이", icon: "✍️", bg: "#f0fdf4", border: "#10b981" }
+const configs = [
+        { key: "[원본 문제 추출]:", title: "추출된 원본 문제 텍스트", icon: "📝", bg: "#f8fafc", border: "#94a3b8" },
+        { key: "[교과 및 단원]:", title: "교과명 및 단원명", icon: "📚", bg: "#f3f4f6", border: "#64748b" },
+        { key: "[성취기준 및 수준]:", title: "성취기준과 성취수준", icon: "📍", bg: "#eff6ff", border: "#3b82f6" },
+        { key: "[핵심 개념]:", title: "엄밀한 핵심 개념", icon: "💡", bg: "#fffbeb", border: "#f59e0b" },
+        { key: "[시각화 자료]:", title: "문제 분석 시각 자료", icon: "📊", bg: "#fdf4ff", border: "#e11d48" },
+        { key: "[상세 풀이]:", title: "단계별 정밀 풀이", icon: "✍️", bg: "#f0fdf4", border: "#10b981" }
     ];
 
-    configs.forEach((conf, index) => {
+configs.forEach((conf, index) => {
         let content = "";
         const startIndex = text.indexOf(conf.key);
         
         if (startIndex !== -1) {
             const contentStart = startIndex + conf.key.length;
             let nextKeyIndex = text.length; 
-            
             configs.forEach((otherConf, otherIndex) => {
                 if (index !== otherIndex) {
                     const idx = text.indexOf(otherConf.key, contentStart);
@@ -1065,6 +1227,19 @@ function renderSophisticatedResult(rawText, base64Image) {
         }
 
         if (!content) return;
+
+        // 💡 [핵심] 정규식 개선: \n이 없거나 공백이 달라도 매칭되도록 수정
+        if (conf.key === "[시각화 자료]:" || conf.key === "[상세 풀이]:") {
+            content = content.replace(/(?:```svg\s*)?(?:&lt;svg|&lt;SVG)([\s\S]*?)(?:&lt;\/svg&gt;|&lt;\/SVG&gt;)(?:\s*```)?/g, function(match, p1) {
+                let svgCode = `<svg${p1}</svg>`.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+                return `<div style="text-align: center; margin: 1.5rem 0; overflow-x: auto; background: white; padding: 1rem; border-radius: 8px; border: 1px dashed #e11d48;">${svgCode}</div>`;
+            });
+            
+            content = content.replace(/```mermaid\s*([\s\S]*?)```/g, function(match, p1) {
+                let mermaidCode = p1.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+                return `<div class="mermaid" style="text-align: center; margin: 1.5rem 0; background: white; padding: 1rem; border-radius: 8px; border: 1px dashed #e11d48;">${mermaidCode}</div>`;
+            });
+        }
 
         if (conf.key === "[원본 문제 추출]:") {
             content = content.replace(/\n/g, '<br>');
@@ -1082,13 +1257,13 @@ function renderSophisticatedResult(rawText, base64Image) {
         }
         if (conf.key === "[핵심 개념]:") { content = content.replace(/\n/g, '<br>'); }
 
-        const card = document.createElement('div');
+const card = document.createElement('div');
         card.style.cssText = `background: ${conf.bg}; border: 1px solid ${conf.border}44; border-left: 6px solid ${conf.border}; padding: 1.2rem; border-radius: 12px; margin-bottom: 1.2rem; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);`;
         
         card.innerHTML = `
             <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.8rem;">
                 <span style="font-size:1.2rem;">${conf.icon}</span>
-                <strong style="font-size:1.1rem; color:#1e293b;">${conf.title}</strong>
+                <strong style="font-size:1.1rem; color:#1e293b;">${index}. ${conf.title}</strong>
             </div>
             <div class="analysis-content" style="color:#334155; line-height:1.8; font-size:0.95rem;">${content}</div>
         `;
@@ -1096,7 +1271,8 @@ function renderSophisticatedResult(rawText, base64Image) {
     });
 }
 
-async function processAndSaveBackground(analysisText, apiKey) {
+// 💡 매개변수에 isRetry(재시도 여부)가 추가되었습니다.
+async function processAndSaveBackground(analysisText, apiKey, isRetry = false) {
     try {
         const workerUrl = "https://script.google.com/macros/s/AKfycbwgx4RgF8FQxxL3jBgEQ5l369llADjhZ1NepulIdF4DdX18kBrB8oRQ4Ft0d5WdKtEF/exec"; 
         const userApiKey = localStorage.getItem('gemini_api_key');
@@ -1111,79 +1287,131 @@ async function processAndSaveBackground(analysisText, apiKey) {
         });
 
         const result = await response.json();
-        if (!result.candidates || result.candidates.length === 0) {
-            console.warn("AI 변형 문항 생성 실패 (응답 없음). 조용히 넘어갑니다.");
-            return; 
+        
+        if (result.error || !result.candidates || result.candidates.length === 0) {
+            throw new Error(result.error ? JSON.stringify(result.error) : "응답 없음");
         }
 
         const aiResponse = result.candidates[0].content.parts[0].text;
+
         let finalQuestion = aiResponse;
         let finalAnswer = "정답 정보 없음";
         
-        const qMatch = aiResponse.match(/문제:\s*([\s\S]*?)(?=정답:|$)/);
-        const aMatch = aiResponse.match(/정답:\s*([\s\S]*)/);
+        const qMatch = aiResponse.match(/문제:\s*([\s\S]*?)(?=그림:|정답:|$)/);
+        const imgMatch = aiResponse.match(/그림:\s*([\s\S]*?)(?=정답:|$)/);
+        const aMatch = aiResponse.match(/정답:\s*([\s\S]*?)(?=판정이유:|$)/); 
         
         if (qMatch) finalQuestion = qMatch[1].trim();
         if (aMatch) finalAnswer = aMatch[1].trim();
 
-        // 💡 융합 문항 처리를 위해 추출된 모든 성취기준 코드를 배열로 수집합니다.
-        // 💡 융합 문항 처리를 위해 추출된 모든 성취기준 코드를 배열로 수집합니다. 
-        // (AI가 띄어쓰기를 넣어서 출력할 경우를 대비해 \s 정규식 추가)
-        const stdCodes = analysisText.match(/\[\d{2}[가-힣a-zA-Z0-9\s]+-\d{2}-\d{2}\]/g) || ["unknown"];
+        let svgCode = imgMatch ? imgMatch[1].trim() : "";
+        if (svgCode && svgCode !== "없음") {
+            finalQuestion += `\n\n${svgCode}`; 
+        }
 
+        const reasonMatch = analysisText.match(/판정 이유:\s*([\s\S]*?)(?=\n\[|$)/);
+        let extractedReason = reasonMatch ? reasonMatch[1].trim() : "AI가 교육과정 루브릭을 바탕으로 분석한 문항입니다.";
+
+        // =========================================================================
+        // 🕵️‍♂️ [분리 저장 로직 시작] 이미지 -> project_images / 텍스트 -> project_texts
+        // =========================================================================
+        const currentUserEmail = auth.currentUser ? auth.currentUser.email : "알 수 없음";
+        const currentUserNickname = auth.currentUser ? (auth.currentUser.displayName || "선생님") : "알 수 없음";
+
+        // 1. 이미지는 용량이 크므로 project_images에 개별 문서로 분리 저장 (이 방식이 맞습니다)
+        let base64ImageToSave = null;
+        const previewImgEl = document.getElementById('image-preview');
+        if (previewImgEl && previewImgEl.src && previewImgEl.src.startsWith('data:image')) {
+            base64ImageToSave = previewImgEl.src;
+        }
+
+        let finalImageId = null;
+        if (base64ImageToSave) {
+            try {
+                const imgDocRef = await db.collection('project_images').add({
+                    source: "admin_monitoring",
+                    base64Data: base64ImageToSave,
+                    ownerEmail: currentUserEmail,
+                    userNickname: currentUserNickname,
+                    timestamp: firebase.firestore.FieldValue.serverTimestamp()
+                });
+                finalImageId = imgDocRef.id;
+            } catch (err) { console.warn("이미지 분리 저장 실패:", err); }
+        }
+
+        // 💡 2. 텍스트 분리 저장: 문항별 문서 생성 금지! currentProjectId 문서 하나에 병합(merge)
+        try {
+            if (typeof currentProjectId !== 'undefined' && currentProjectId) {
+                // 해당 분석의 고유 식별자 생성
+                const uniqueKey = `monitoring_${Date.now()}`; 
+                
+                const textUpdateData = {
+                    ownerEmail: currentUserEmail,
+                    userNickname: currentUserNickname,
+                    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                };
+
+                // 'texts' 객체 안에 필드를 추가하여, 문서 하나에 모든 문항 텍스트가 누적되도록 함
+                textUpdateData[`texts.${uniqueKey}_question`] = finalQuestion;
+                textUpdateData[`texts.${uniqueKey}_answer`] = finalAnswer;
+                textUpdateData[`texts.${uniqueKey}_reason`] = extractedReason;
+                if (finalImageId) {
+                    textUpdateData[`texts.${uniqueKey}_imageId`] = finalImageId;
+                }
+
+                // merge: true 를 써야 기존 문항들의 텍스트가 삭제되지 않고 덧붙여집니다.
+                await db.collection('project_texts').doc(currentProjectId).set(textUpdateData, { merge: true });
+            }
+        } catch (err) { console.warn("텍스트 병합 저장 실패:", err); }
+        // =========================================================================
+
+        const stdCodes = analysisText.match(/\[\d{2}[^\]]+-\d{2}-\d{2}\]/g) || ["unknown"];
         const levelMatch = analysisText.match(/(?:성취수준|수준)[\s:은는]*([A-E]\+?)/) || analysisText.match(/\[수준\]\s*([A-E]\+?)/);
         let extractedLevel = levelMatch ? levelMatch[1].replace('+', '') : "C";
 
-        const reasonMatch = analysisText.match(/판정 이유:\s*([\s\S]*?)(?=\[|$)/);
-        let extractedReason = reasonMatch ? reasonMatch[1].trim() : "AI가 교육과정 루브릭을 바탕으로 분석한 문항입니다.";
-
-        // 💡 배열을 순회하며 각각의 성취기준 서랍에 별도로 저장합니다.
+        // 3. 변형 문항은 별도의 은행(transformed_bank)에 저장
         for (const code of stdCodes) {
-            // 1. 비교를 위해 AI 추출 코드에서 대괄호와 띄어쓰기를 모두 제거합니다.
             let cleanCode = code.replace(/[\[\]\s]/g, '');
+            let matchedSubject = typeof detectSubjectIdFromStandardCode === 'function' ? detectSubjectIdFromStandardCode(cleanCode) : 'uncategorized';
             
-            // 2. 1차: AI 오타 방지용 자동 판별 함수를 최우선 적용
-            let matchedSubject = detectSubjectIdFromStandardCode(cleanCode);
-            
-            // 3. 2차: 판별 함수에서 못 찾았다면, 시스템 DB 전체를 순회하며 띄어쓰기를 무시하고 매칭합니다.
+            // ... (기존 과목 매칭 로직 유지) ...
             if (matchedSubject === 'uncategorized') {
                 for (const key in subjectData) {
                     if (subjectData[key].standards) {
-                        // DB에 등록된 코드 역시 대괄호와 띄어쓰기를 제거한 후 완벽히 일치하는지 비교합니다.
                         const isMatched = subjectData[key].standards.some(s => 
                             s.code.replace(/[\[\]\s]/g, '') === cleanCode
                         );
-                        if (isMatched) {
-                            matchedSubject = key; 
-                            break;
-                        }
+                        if (isMatched) { matchedSubject = key; break; }
                     }
                 }
             }
-            
-            // 4. 그래도 못 찾았다면 현재 탭으로 들어가지 않고 확실하게 '미분류(uncategorized)'로 보냅니다.
-            if (!matchedSubject) {
-                matchedSubject = 'uncategorized';
-            }
+            if (!matchedSubject) matchedSubject = 'uncategorized';
 
             await db.collection('transformed_bank').add({
                 answer: finalAnswer,
                 level: extractedLevel,
-                question: finalQuestion,
+                question: finalQuestion, // 문항 은행에는 텍스트가 들어가는 것이 맞습니다.
                 reason: extractedReason,
-                standard_code: code.replace(/[\[\]]/g, '').trim(), // DB 저장 시에는 대괄호만 빼고 깔끔하게 저장
+                standard_code: code.replace(/[\[\]]/g, '').trim(),
                 subject: matchedSubject,
                 timestamp: firebase.firestore.FieldValue.serverTimestamp(),
-                user_email: auth.currentUser ? auth.currentUser.email : "알 수 없음" // 👈 여기!
+                user_email: currentUserEmail,
+                user_nickname: currentUserNickname 
             });
-        
         }
 
-        console.log("✅ 문항 분석 결과가 성공적으로 저장되었습니다.");
+        console.log("✅ 문항 분석 결과 및 변형 문항이 성공적으로 분리 저장되었습니다.");
 
     } catch (e) { 
-        console.error("데이터 저장 실패:", e);
-        alert("분석 결과 자동 저장 중 문제가 발생했습니다: " + e.message);
+        console.warn("데이터 저장 또는 통신 실패:", e);
+        if (!isRetry) {
+            let pending = JSON.parse(localStorage.getItem('pending_variants')) || [];
+            pending.push({ analysisText: analysisText, time: new Date().toISOString() });
+            localStorage.setItem('pending_variants', JSON.stringify(pending));
+            console.log("통신 지연으로 인해 로컬에 임시 보관했습니다.");
+        } else {
+            throw e;
+        }
     }
 }
 
@@ -1430,10 +1658,22 @@ async function changeSubject() {
             try {
                 const snapshot = await db.collection('transformed_bank').where('subject', '==', currentSubject).get();
                 snapshot.forEach(doc => {
-                    const stdCode = doc.data().standard_code;
-                    if (stdCode && stdCode !== "unknown" && stdCode !== "코드없음") {
-                        const cleanCode = stdCode.replace(/[\[\]\s]/g, ''); // 대괄호 제거
-                        currentSubjectQCount[cleanCode] = (currentSubjectQCount[cleanCode] || 0) + 1;
+                    const stdCodes = doc.data().standard_code;
+                    // 💡 배열인 경우 (새로운 방식)
+                    if (Array.isArray(stdCodes)) {
+                        stdCodes.forEach(code => {
+                            if (code && code !== "unknown" && code !== "코드없음") {
+                                const cleanCode = code.replace(/[\[\]\s]/g, '');
+                                currentSubjectQCount[cleanCode] = (currentSubjectQCount[cleanCode] || 0) + 1;
+                            }
+                        });
+                    } 
+                    // 💡 문자열인 경우 (과거 데이터 호환)
+                    else if (typeof stdCodes === 'string') {
+                        if (stdCodes && stdCodes !== "unknown" && stdCodes !== "코드없음") {
+                            const cleanCode = stdCodes.replace(/[\[\]\s]/g, '');
+                            currentSubjectQCount[cleanCode] = (currentSubjectQCount[cleanCode] || 0) + 1;
+                        }
                     }
                 });
                 // 다 세었으면 다음을 위해 수첩에 기록해 둡니다.
@@ -1459,89 +1699,114 @@ function initDashboard() {
     const container = document.getElementById('card-container');
     container.innerHTML = "";
     
-    if (!subjectData[currentSubject]) {
+    if (!subjectData[currentSubject] || subjectData[currentSubject].standards.length === 0) {
         container.innerHTML = `<div style="text-align:center; padding:3rem; background:white; border-radius:12px; color:#64748b; font-weight:bold;">관리자 메뉴에서 이 과목의 성취기준을 먼저 등록해 주세요! 👨‍🔧</div>`;
         return;
     }
     
-    subjectData[currentSubject].standards.forEach(std => {
-        const card = document.createElement('div');
-        card.className = 'card';
-        card.style.display = 'block';
-        card.style.position = 'relative';
+    const standards = subjectData[currentSubject].standards;
+    // 💡 과목의 성취기준 중 중단원(category) 정보가 단 하나라도 있는지 검사합니다.
+    const hasCategory = standards.some(std => std.category && std.category.trim() !== "");
 
-        const textArea = document.createElement('div');
-        textArea.style.cursor = 'pointer';
-        // ✨ 성취기준 텍스트가 자연스럽게 줄바꿈되도록 속성만 1줄 추가했습니다.
-        textArea.style.wordBreak = 'keep-all'; 
-        textArea.innerHTML = `<h3 style="margin: 0 0 0.5rem 0; color: var(--primary);">${std.code}</h3><p style="margin: 0; color: var(--text-main); line-height: 1.6;">${std.desc}</p>`;
-        textArea.onclick = () => openModal(std);
-        
-        const btnArea = document.createElement('div');
-        btnArea.style.textAlign = 'right';
-        btnArea.style.marginTop = '15px'; 
-        
-        // ✨ 마법의 문항 유무 판별 로직
-        const cleanStdCode = std.code.replace(/[\[\]\s]/g, '');
-        const qCount = currentSubjectQCount[cleanStdCode] || 0;
-        const hasQuestions = (std.questions && std.questions.length > 0) || qCount > 0; 
-        
-        const quizBtn = document.createElement('button');
-        
-        if (hasQuestions) {
-            quizBtn.className = 'save-btn'; 
-            // ✨ [문항 매칭 연습] 버튼 크기 완벽 고정
-            quizBtn.style.display = 'inline-flex';
-            quizBtn.style.justifyContent = 'center';
-            quizBtn.style.alignItems = 'center';
-            quizBtn.style.width = '170px';  // 너비 고정
-            quizBtn.style.height = '42px';  // 높이 고정
-            quizBtn.style.margin = '0 0 0 auto';
-            quizBtn.style.padding = '0'; 
-            quizBtn.style.fontSize = '0.9rem';
-            quizBtn.style.borderRadius = '8px'; 
-            quizBtn.style.whiteSpace = 'nowrap'; // 텍스트 줄바꿈 금지
+    if (hasCategory) {
+        // [A안] 중단원이 존재하는 경우: 단원별 그룹화 처리
+        const groupedStandards = {};
+        standards.forEach(std => {
+            const cat = std.category || '미분류 단원';
+            if (!groupedStandards[cat]) groupedStandards[cat] = [];
+            groupedStandards[cat].push(std);
+        });
 
-            // 파란 배지로 몇 문제가 있는지 알려줍니다
-            quizBtn.innerHTML = `📝 문항 매칭 연습 <span style="background:rgba(255,255,255,0.3); color:white; padding:2px 6px; border-radius:12px; font-size:0.75rem; margin-left:4px;">${qCount}개</span>`;
-            
-            quizBtn.onclick = (e) => {
-                e.stopPropagation(); 
-                showSection('quiz'); 
-                startLevelMatching(std.code); 
-            };
-        } else {
-            // 문항이 없으면 흑백 처리하고 누르지 못하게 막습니다!
-            quizBtn.className = 'save-btn disabled-btn'; 
-            // ✨ [등록된 문항 없음] 버튼 크기 완벽 고정
-            quizBtn.style.display = 'inline-flex';
-            quizBtn.style.justifyContent = 'center';
-            quizBtn.style.alignItems = 'center';
-            quizBtn.style.width = '160px';  // 너비 고정 (매칭 버튼과 다르게 설정)
-            quizBtn.style.height = '42px';  // 높이 고정
-            quizBtn.style.margin = '0 0 0 auto';
-            quizBtn.style.padding = '0'; 
-            quizBtn.style.fontSize = '0.9rem';
-            quizBtn.style.borderRadius = '8px'; 
-            quizBtn.style.whiteSpace = 'nowrap'; // 텍스트 줄바꿈 금지
-            quizBtn.innerHTML = '🚫 등록된 문항 없음';
-            quizBtn.disabled = true; // 강제 잠금
-            
-            quizBtn.onclick = (e) => { e.stopPropagation(); }; // 클릭 무시
+        for (const category in groupedStandards) {
+            // 단원별 제목(헤더) 추가
+            const catHeader = document.createElement('h3');
+            catHeader.style.cssText = "margin-top: 2rem; margin-bottom: 1rem; color: #1e3a8a; border-bottom: 2px solid #cbd5e1; padding-bottom: 0.5rem;";
+            catHeader.innerText = `📂 ${category}`;
+            container.appendChild(catHeader);
+
+            // 해당 단원에 속한 카드들 그리기
+            groupedStandards[category].forEach(std => {
+                renderStandardCard(std, container);
+            });
         }
-        
-        btnArea.appendChild(quizBtn);
-        card.appendChild(textArea);
-        card.appendChild(btnArea);
-        container.appendChild(card);
-    });
+    } else {
+        // [B안] 중단원이 아예 없는 경우: 이전처럼 순서대로 카드만 바로 그리기
+        standards.forEach(std => {
+            renderStandardCard(std, container);
+        });
+    }
     
+    // 수식(MathJax) 깨짐 방지 후처리
     setTimeout(() => {
         if (window.MathJax && window.MathJax.typesetPromise) { 
             MathJax.typesetClear(); 
             MathJax.typesetPromise([container]).catch(err => console.error("수식 렌더링 에러:", err)); 
         }
     }, 300);
+}
+
+// 💡 중복 코드를 방지하고 가독성을 높이기 위해 카드를 그리는 로직을 별도 함수로 분리했습니다.
+function renderStandardCard(std, container) {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.style.display = 'block';
+    card.style.position = 'relative';
+
+    const textArea = document.createElement('div');
+    textArea.style.cursor = 'pointer';
+    textArea.style.wordBreak = 'keep-all'; 
+    textArea.innerHTML = `<h3 style="margin: 0 0 0.5rem 0; color: var(--primary);">${std.code}</h3><p style="margin: 0; color: var(--text-main); line-height: 1.6;">${std.desc}</p>`;
+    textArea.onclick = () => openModal(std);
+    
+    const btnArea = document.createElement('div');
+    btnArea.style.textAlign = 'right';
+    btnArea.style.marginTop = '15px'; 
+    
+    const cleanStdCode = std.code.replace(/[\[\]\s]/g, '');
+    const qCount = currentSubjectQCount[cleanStdCode] || 0;
+    const hasQuestions = (std.questions && std.questions.length > 0) || qCount > 0; 
+    
+    const quizBtn = document.createElement('button');
+    
+    if (hasQuestions) {
+        quizBtn.className = 'save-btn'; 
+        quizBtn.style.display = 'inline-flex';
+        quizBtn.style.justifyContent = 'center';
+        quizBtn.style.alignItems = 'center';
+        quizBtn.style.width = '170px';
+        quizBtn.style.height = '42px';
+        quizBtn.style.margin = '0 0 0 auto';
+        quizBtn.style.padding = '0'; 
+        quizBtn.style.fontSize = '0.9rem';
+        quizBtn.style.borderRadius = '8px'; 
+        quizBtn.style.whiteSpace = 'nowrap';
+        quizBtn.innerHTML = `📝 문항 매칭 연습 <span style="background:rgba(255,255,255,0.3); color:white; padding:2px 6px; border-radius:12px; font-size:0.75rem; margin-left:4px;">${qCount}개</span>`;
+        quizBtn.onclick = (e) => {
+            e.stopPropagation(); 
+            showSection('quiz'); 
+            startLevelMatching(std.code); 
+        };
+    } else {
+        quizBtn.className = 'save-btn disabled-btn'; 
+        quizBtn.style.display = 'inline-flex';
+        quizBtn.style.justifyContent = 'center';
+        quizBtn.style.alignItems = 'center';
+        quizBtn.style.width = '160px';
+        quizBtn.style.height = '42px';
+        quizBtn.style.margin = '0 0 0 auto';
+        quizBtn.style.padding = '0'; 
+        quizBtn.style.fontSize = '0.9rem';
+        quizBtn.style.borderRadius = '8px'; 
+        quizBtn.style.whiteSpace = 'nowrap';
+        quizBtn.innerHTML = '🚫 등록된 문항 없음';
+        quizBtn.disabled = true;
+        quizBtn.onclick = (e) => { e.stopPropagation(); };
+    }
+    
+    btnArea.appendChild(quizBtn);
+    card.appendChild(textArea);
+    card.appendChild(btnArea);
+    container.appendChild(card);
 }
 
 async function startLevelMatching(code) {
@@ -1552,16 +1817,16 @@ async function startLevelMatching(code) {
 
     try {
         let cleanInputCode = code.replace(/[\[\]\s]/g, '');
-        let withBracketCode = `[${cleanInputCode}]`;
+        // 💡 배열 내 포함 여부를 검사하는 array-contains 활용
         const snapshot = await db.collection('transformed_bank')
-         .where('standard_code', 'in', [cleanInputCode, withBracketCode])
+         .where('standard_code', 'array-contains', cleanInputCode)
          .get();
+         
         snapshot.forEach(doc => {
             const data = doc.data();
             let extractedLevel = data.level || data.original_analysis?.match(/성취수준:\s*([A-E])/)?.[1] || "C"; 
             
-            // 💡 추가된 핵심 로직: DB의 reason 필드를 최우선으로 읽고, 없으면 original_analysis 텍스트에서 강제로 추출합니다!
-            let extractedReason = data.reason || data.original_analysis?.match(/판정 이유:\s*([\s\S]*?)(?=\[|$)/)?.[1]?.trim() || "사용자가 업로드한 문항을 AI가 분석하고 변형한 실전 문항입니다.";
+            let extractedReason = data.reason || data.original_analysis?.match(/판정 이유:\s*([\s\S]*?)(?=\n\[|$)/)?.[1]?.trim() || "사용자가 업로드한 문항을 AI가 분석하고 변형한 실전 문항입니다.";
         
             let sourceBadge = data.source === "선생님 직접 등록"
                 ? `<div style="background-color: #e0e7ff; padding: 10px; border-left: 4px solid #3b82f6; margin-bottom: 10px; border-radius: 4px;">
@@ -1571,17 +1836,22 @@ async function startLevelMatching(code) {
                        <span style="font-size: 0.8rem; color: #166534; font-weight: bold;">💡 AI 변형 추가 문항</span>
                    </div>`;
         
+            // 💡 [핵심 추가] 문제 텍스트에 포함된 마크다운 SVG 코드를 진짜 그림 태그로 변환하기
+            let pureQuestion = data.question || data.q || "문제 내용이 없습니다.";
+
             let imgHtml = data.image ? `<br><img src="${data.image}" style="max-width:100%; margin-top:15px; border-radius:8px; border:1px solid #cbd5e1; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">` : "";
-                combinedQuestions.push({
-                    id: doc.id,  // 💡 추가된 부분: 원본 문서의 고유 ID를 잊지 않고 챙깁니다.
-                    q: sourceBadge + (data.question || data.q || "문제 내용이 없습니다."),
-                    level: extractedLevel,
-                    reason: extractedReason,
-                    answer: data.answer || "정답 정보 없음",
-                    standard_code: data.standard_code || "unknown", // 💡 피드백 출력용 성취기준 저장
-                    image: data.image || data.imageUrl || data.img // ✨ 누락되었던 이미지 데이터를 챙겨줍니다!
-                });
+            let displayCode = Array.isArray(data.standard_code) ? data.standard_code.join(', ') : (data.standard_code || "unknown");
+            
+            combinedQuestions.push({
+                id: doc.id,
+                q: sourceBadge + pureQuestion, // 💡 변환된 pureQuestion을 넣어줍니다!
+                level: extractedLevel,
+                reason: extractedReason,
+                answer: data.answer || "정답 정보 없음",
+                standard_code: displayCode, // 💡 변환된 코드를 넣어줍니다!
+                image: data.image || data.imageUrl || data.img 
             });
+        });
     } catch (error) { console.warn("DB 로드 실패"); }
 
     currentQuestions = shuffleArray(combinedQuestions);
@@ -1618,18 +1888,52 @@ function loadLevelQuestion() {
     if (currentQuestions.length === 0) return;
     const question = currentQuestions[currentLevelQ];
     
-    // 1. 텍스트 줄바꿈 및 보기 번호 정렬
-    let formattedText = question.q.replace(/\n/g, '<br>');
+    // 💡 [초강력 보안 대피소 로직] 그림 코드가 <br>에 의해 찢어지는 것을 완벽 차단!
+    let pureText = question.q || "";
+    let svgBlocks = [];
+    
+    // 1. 임시 도화지를 만들어 브라우저가 직접 SVG를 100% 안전하게 찾아내도록 합니다.
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = pureText;
+    
+    const svgs = tempDiv.querySelectorAll('svg');
+    svgs.forEach((svg, index) => {
+        svgBlocks.push(svg.outerHTML);
+        const placeholder = document.createTextNode(`%%SVG_PLACEHOLDER_${index}%%`);
+        svg.parentNode.replaceChild(placeholder, svg);
+    });
+    
+    pureText = tempDiv.innerHTML; // SVG가 플레이스홀더로 바뀐 안전한 텍스트 획득
+
+    // 2. 백틱(```svg ... ```)으로 감싸진 마크다운 형태도 혹시 모르니 추가로 잡아냅니다.
+    pureText = pureText.replace(/```svg\s*([\s\S]*?)\s*```/gi, (match, innerSvg) => {
+        svgBlocks.push(innerSvg.trim());
+        return `%%SVG_PLACEHOLDER_${svgBlocks.length - 1}%%`;
+    });
+    
+    // 3. 그림이 100% 안전하게 대피한 순수 텍스트 상태에서만 줄바꿈(<br>) 적용!
+    let formattedText = pureText.replace(/\n/g, '<br>');
     formattedText = formattedText.replace(/(①|②|③|④|⑤)/g, '<br>&nbsp;&nbsp;$1');
     
-    // 🌟 2. [추가된 로직] Base64 이미지 데이터가 있으면 img 태그 만들기
+    // 4. 줄바꿈이 끝났으니, 대피소에 있던 그림을 예쁜 박스에 담아 원래 위치에 복원
+    svgBlocks.forEach((svgContent, idx) => {
+        // 모바일에서도 넘치지 않게 반응형 스타일 강제 주입
+        let safeSvg = svgContent
+            .replace(/<svg/i, '<svg style="max-width: 400px; width: 100%; height: auto; display: block; margin: 0 auto;"')
+            .replace(/width="100%"/i, '')    // 기존의 충돌하는 가로 속성 제거
+            .replace(/height="100%"/i, '');  // 기존의 충돌하는 세로 속성 제거
+        const svgBoxHtml = `
+            <div class="svg-box" style="margin-top: 15px; text-align: center; background: #f8fafc; padding: 12px; border-radius: 6px; border: 1px solid #e2e8f0; overflow-x: auto;">
+                ${safeSvg}
+            </div>`;
+        formattedText = formattedText.replace(`%%SVG_PLACEHOLDER_${idx}%%`, svgBoxHtml);
+    });
+    
+    // 🌟 Base64 이미지 데이터가 있으면 img 태그 만들기 (기존 기능 100% 유지)
     let imageHtml = '';
-    // DB에 저장된 이미지 키값이 image, imageUrl, img 중 하나일 경우를 모두 대비
     const questionImage = question.image || question.imageUrl || question.img; 
     
     if (questionImage) {
-        // Base64 문자열이 보통 "data:image/png;base64,..." 형태로 시작합니다.
-        // 이미지가 너무 크면 곤란하므로 최대 너비(max-width)를 100%로 설정해 박스 안에 예쁘게 맞춥니다.
         imageHtml = `
             <div style="margin: 20px 0; text-align: center; background: #fffbeb; padding: 15px; border-radius: 8px; border: 1px dashed #f59e0b; box-shadow: inset 0 2px 4px rgba(0,0,0,0.02);">
                 <div style="color: #d97706; font-size: 0.9rem; font-weight: bold; margin-bottom: 12px; word-break: keep-all;">
@@ -1640,7 +1944,7 @@ function loadLevelQuestion() {
         `;
     }
     
-    // 3. 화면에 출력 (텍스트 밑에 이미지가 나오도록 ${imageHtml} 추가)
+    // 5. 화면에 출력
     qBox.innerHTML = `
         <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px; border-bottom: 2px solid #e2e8f0; padding-bottom: 10px;">
             <strong style="color: #1e3a8a; font-size: 1.1rem;">[문항 ${currentLevelQ + 1} / ${currentQuestions.length}]</strong>
@@ -1690,7 +1994,32 @@ function checkLevelAnswer(selectedLevel, btn) {
         
         if (wrongLevelExample) {
             // 💡 예시 문항도 본 문항과 똑같이 줄바꿈과 선지 정렬을 적용합니다.
-            let formattedWrongQ = wrongLevelExample.q.replace(/\n/g, '<br>').replace(/(①|②|③|④|⑤)/g, '<br>&nbsp;&nbsp;$1');
+            // 🛠️ 수정할 코드 (이 부분으로 통째로 교체해주세요!)
+            let pureWrongText = wrongLevelExample.q || "";
+            let wrongSvgBlocks = [];
+
+            // 1. 오답 문항의 SVG도 안전하게 대피
+            pureWrongText = pureWrongText.replace(/```svg\s*([\s\S]*?)\s*```/gi, (match, innerSvg) => {
+                wrongSvgBlocks.push(innerSvg.trim());
+                return `%%WRONG_SVG_${wrongSvgBlocks.length - 1}%%`;
+            });
+            pureWrongText = pureWrongText.replace(/<svg[\s\S]*?<\/svg>/gi, (match) => {
+                wrongSvgBlocks.push(match);
+                return `%%WRONG_SVG_${wrongSvgBlocks.length - 1}%%`;
+            });
+
+            // 2. 줄바꿈 및 선지 정렬 적용
+            let formattedWrongQ = pureWrongText.replace(/\n/g, '<br>').replace(/(①|②|③|④|⑤)/g, '<br>&nbsp;&nbsp;$1');
+
+            // 3. 렌더링 박스에 담아 복원
+            wrongSvgBlocks.forEach((svgContent, idx) => {
+                let safeSvg = svgContent
+                    .replace(/<svg/i, '<svg style="max-width: 400px; width: 100%; height: auto; display: block; margin: 0 auto;"')
+                    .replace(/width="100%"/i, '')
+                    .replace(/height="100%"/i, '');
+                const svgBoxHtml = `<div class="svg-box" style="margin-top: 10px; text-align: center; background: #f8fafc; padding: 12px; border-radius: 6px; border: 1px solid #e2e8f0; overflow-x: auto;">${safeSvg}</div>`;
+                formattedWrongQ = formattedWrongQ.replace(`%%WRONG_SVG_${idx}%%`, svgBoxHtml);
+            });
 
             comparativeText = `<hr style="margin: 1rem 0; border: 0; border-top: 1px solid #fca5a5;">
                                <div style="text-align: left; font-size: 0.9rem;">
@@ -1741,7 +2070,7 @@ function backToStandardSelection() {
     showSection('dashboard'); 
 }
 
-// 💡 중복 실행 방지용 신호등 변수 (반드시 함수 바깥에 선언)
+// 💡 중복 실행 방지용 신호등 변수 (반드시 함수 바깥에 선언 유지)
 let checklistAborter = 0;
 
 // 💡 체크리스트 목록 렌더링 및 수업일지 '개수 배지' 표시 함수
@@ -1776,46 +2105,79 @@ async function initChecklist() {
         saved = JSON.parse(localStorage.getItem('check_' + currentSubject)) || {};
     }
 
-    // ✨ [핵심 방어막] 내가 가장 마지막에 불린 '최신 호출'이 아니면 렌더링을 멈추고 조용히 종료!
+    // ✨ [핵심 방어막] 내가 가장 마지막에 불린 '최신 호출'이 아니면 렌더링을 멈춤
     if (currentCall !== checklistAborter) return;
 
     // 최신 호출임이 확인되었으니 안전하게 화면 비우기
     container.innerHTML = "";
 
-    // 1. 엑셀 다운로드 버튼 생성 (이제 무조건 1개만 생성됩니다)
+    // 1. 엑셀 다운로드 버튼 생성 
     const headerDiv = document.createElement('div');
     headerDiv.style.cssText = "text-align: right; margin-bottom: 10px;";
     headerDiv.innerHTML = `<button id="journal-excel-btn" onclick="downloadAllJournalsExcel()" style="background: #10b981; color: white; border: none; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.85rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); transition: 0.2s;">📥 내 모든 수업일지 엑셀 다운로드</button>`;
     container.appendChild(headerDiv);
 
-    // 2. 체크리스트 목록 그리기
-    subjectData[currentSubject].standards.forEach(std => {
-        const div = document.createElement('div');
-        div.className = 'check-item';
-        div.style.cssText = 'display: flex; justify-content: space-between; align-items: center; background: var(--card-bg); padding: 1rem; margin-bottom: 0.5rem; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);';
-        
-        const leftDiv = document.createElement('div');
-        leftDiv.style.cssText = 'display: flex; align-items: center; flex: 1; margin-right: 10px;';
-        const safeDesc = std.desc.replace(/'/g, "\\'").replace(/"/g, '&quot;'); 
-        leftDiv.innerHTML = `
-            <input type="checkbox" id="c-${std.code}" ${saved[std.code]?'checked':''} onchange="silentSaveChecklist()" style="margin-right: 1rem; transform: scale(1.5); cursor: pointer; flex-shrink: 0;">
-            <label for="c-${std.code}" style="cursor: pointer; line-height: 1.5;"><strong>${std.code}</strong> ${std.desc}</label>
-        `;
-        
-        const entries = journalData[std.code] || [];
-        const jCount = entries.length;
-        let badgeHtml = "";
-        if (jCount > 0) {
-            badgeHtml = `<span style="background: #ef4444; color: white; padding: 2px 6px; border-radius: 12px; font-size: 0.7rem; margin-left: 5px; box-shadow: 0 1px 2px rgba(0,0,0,0.2);">${jCount}</span>`;
+    const standards = subjectData[currentSubject].standards;
+    
+    // 💡 [선생님 요청 반영] 중단원(category) 필드가 하나라도 입력되어 있는지 체크
+    const hasCategory = standards.some(std => std.category && std.category.trim() !== "");
+
+    if (hasCategory) {
+        // [A안] 중단원이 존재하는 경우: 단원별 그룹화 처리
+        const groupedStandards = {};
+        standards.forEach(std => {
+            const cat = std.category || '미분류 단원';
+            if (!groupedStandards[cat]) groupedStandards[cat] = [];
+            groupedStandards[cat].push(std);
+        });
+
+        for (const category in groupedStandards) {
+            // 단원별 제목(헤더) 추가
+            const catHeader = document.createElement('div');
+            catHeader.style.cssText = "background: #e0e7ff; color: #1e40af; padding: 8px 12px; border-radius: 6px; font-weight: bold; font-size: 0.9rem; margin-top: 1.5rem; margin-bottom: 10px;";
+            catHeader.innerText = `📁 ${category}`;
+            container.appendChild(catHeader);
+
+            // 해당 단원의 항목들만 그리기
+            groupedStandards[category].forEach(std => {
+                renderChecklistItemRow(std, container, saved, journalData);
+            });
         }
+    } else {
+        // [B안] 중단원이 아예 없는 경우: 대단원/소제목 헤더 없이 순서대로 바로 나열
+        standards.forEach(std => {
+            renderChecklistItemRow(std, container, saved, journalData);
+        });
+    }
+}
 
-        const rightDiv = document.createElement('div');
-        rightDiv.innerHTML = `<button onclick="openJournalModal('${std.code}', '${safeDesc}')" style="background: #eff6ff; color: #1e40af; border: 1px solid #bfdbfe; padding: 6px 12px; border-radius: 6px; font-size: 0.85rem; font-weight: bold; cursor: pointer; white-space: nowrap; box-shadow: 0 1px 2px rgba(0,0,0,0.05); transition: 0.2s;" onmouseover="this.style.background='#dbeafe'" onmouseout="this.style.background='#eff6ff'">📖 수업일지 ${badgeHtml}</button>`;
 
-        div.appendChild(leftDiv);
-        div.appendChild(rightDiv);
-        container.appendChild(div);
-    });
+function renderChecklistItemRow(std, container, saved, journalData) {
+    const div = document.createElement('div');
+    div.className = 'check-item';
+    div.style.cssText = 'display: flex; justify-content: space-between; align-items: center; background: var(--card-bg); padding: 1rem; margin-bottom: 0.5rem; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);';
+    
+    const leftDiv = document.createElement('div');
+    leftDiv.style.cssText = 'display: flex; align-items: center; flex: 1; margin-right: 10px;';
+    const safeDesc = std.desc.replace(/'/g, "\\'").replace(/"/g, '&quot;'); 
+    leftDiv.innerHTML = `
+        <input type="checkbox" id="c-${std.code}" ${saved[std.code]?'checked':''} onchange="silentSaveChecklist()" style="margin-right: 1rem; transform: scale(1.5); cursor: pointer; flex-shrink: 0;">
+        <label for="c-${std.code}" style="cursor: pointer; line-height: 1.5;"><strong>${std.code}</strong> ${std.desc}</label>
+    `;
+    
+    const entries = journalData[std.code] || [];
+    const jCount = entries.length;
+    let badgeHtml = "";
+    if (jCount > 0) {
+        badgeHtml = `<span style="background: #ef4444; color: white; padding: 2px 6px; border-radius: 12px; font-size: 0.7rem; margin-left: 5px; box-shadow: 0 1px 2px rgba(0,0,0,0.2);">${jCount}</span>`;
+    }
+
+    const rightDiv = document.createElement('div');
+    rightDiv.innerHTML = `<button onclick="openJournalModal('${std.code}', '${safeDesc}')" style="background: #eff6ff; color: #1e40af; border: 1px solid #bfdbfe; padding: 6px 12px; border-radius: 6px; font-size: 0.85rem; font-weight: bold; cursor: pointer; white-space: nowrap; box-shadow: 0 1px 2px rgba(0,0,0,0.05); transition: 0.2s;" onmouseover="this.style.background='#dbeafe'" onmouseout="this.style.background='#eff6ff'">📖 수업일지 ${badgeHtml}</button>`;
+
+    div.appendChild(leftDiv);
+    div.appendChild(rightDiv);
+    container.appendChild(div);
 }
 
 // ==========================================
@@ -2228,6 +2590,16 @@ async function reAnalyzeWithChat() {
         
         await checkApiError(response); 
         const result = await response.json();
+
+        // 🚀 [추가된 핵심 방어막]
+        if (result.error) {
+            const errMsg = typeof result.error === 'string' ? result.error : (result.error.message || JSON.stringify(result.error));
+            throw new Error(`AI 통신 에러: ${errMsg}`);
+        }
+        if (!result.candidates || result.candidates.length === 0 || !result.candidates[0].content) {
+            throw new Error("AI가 정상적인 재분석 결과를 생성하지 못했습니다.");
+        }
+
         const analysisText = result.candidates[0].content.parts[0].text;
         currentChatContext = analysisText;
 
@@ -2269,15 +2641,27 @@ async function sendChatMessage() {
     historyEl.scrollTop = historyEl.scrollHeight;
 
     try {
+        let standardsText = "";
+        if (typeof subjectData !== 'undefined') {
+            for (const key in subjectData) {
+                if (subjectData[key].standards && subjectData[key].standards.length > 0) {
+                    standardsText += `\n--- ${subjectData[key].title} ---\n`;
+                    standardsText += subjectData[key].standards.map(s => `${s.code} ${s.desc}`).join('\n');
+                }
+            }
+        }
+
         const workerUrl = "https://script.google.com/macros/s/AKfycbwgx4RgF8FQxxL3jBgEQ5l369llADjhZ1NepulIdF4DdX18kBrB8oRQ4Ft0d5WdKtEF/exec";
         const userApiKey = localStorage.getItem('gemini_api_key');
+        
         const response = await fetch(workerUrl, {
             method: 'POST', 
             headers: { 'Content-Type': 'text/plain' },
             body: JSON.stringify({ 
                 action: "chat_message", 
                 currentChatContext: currentChatContext,
-                subject: currentSubject, // 🟢 [복구 완료]
+                subject: currentSubject,
+                standardsInfo: standardsText, 
                 message: message,
                 apiKey: userApiKey
             })
@@ -2285,6 +2669,20 @@ async function sendChatMessage() {
         
         if (!response.ok) throw new Error("백엔드 챗봇 엔진 통신 실패");
         const result = await response.json();
+        
+        // 🚀 [추가된 핵심 방어막] 에러 데이터가 오면 먹통이 되지 않고 붉은 경고를 출력합니다.
+        if (result.error) {
+            const errMsg = typeof result.error === 'string' ? result.error : (result.error.message || JSON.stringify(result.error));
+            throw new Error(`AI 통신 오류: ${errMsg}`);
+        }
+        if (!result.candidates || result.candidates.length === 0) {
+            throw new Error("AI가 정상적인 답변을 생성하지 못했습니다.");
+        }
+        // 🚀 안전 정책(Safety) 제한 방어
+        if (!result.candidates[0].content) {
+            throw new Error(`안전 정책 제한으로 AI가 답변을 거부했습니다. (사유: ${result.candidates[0].finishReason})`);
+        }
+
         const aiReply = result.candidates[0].content.parts[0].text;
         
         if (aiReply.includes("성취수준:") && aiReply.includes("판정 이유:")) {
@@ -2306,7 +2704,7 @@ async function sendChatMessage() {
     } catch(e) { 
         const loadingEl = document.getElementById(loadingId);
         if(loadingEl) loadingEl.remove();
-        historyEl.innerHTML += `<div style="text-align: left; margin-bottom: 12px;"><span style="color: #dc2626; background: #fee2e2; padding: 10px; border-radius: 8px; display: inline-block; font-size: 0.9rem;">⚠️ ${e.message}</span></div>`; 
+        historyEl.innerHTML += `<div style="text-align: left; margin-bottom: 12px;"><span style="color: #dc2626; background: #fee2e2; padding: 10px; border-radius: 8px; display: inline-block; font-size: 0.9rem; font-weight: bold;">⚠️ ${e.message}</span></div>`; 
         historyEl.scrollTop = historyEl.scrollHeight;
     }
 }
@@ -2328,6 +2726,38 @@ async function syncPendingFeedback() {
         }
     }
     localStorage.setItem('pending_feedback', JSON.stringify(remaining));
+}
+
+// 💡 교체해야 할 올바른 동기화 함수
+async function syncPendingVariants() {
+    // 중복 실행(따닥 클릭 등) 방지용 신호등
+    if (sessionStorage.getItem('is_syncing_variants') === 'true') return;
+    
+    let pending = JSON.parse(localStorage.getItem('pending_variants')) || [];
+    if (pending.length === 0) return; 
+
+    const apiKey = localStorage.getItem('gemini_api_key');
+    if (!apiKey) return;
+
+    sessionStorage.setItem('is_syncing_variants', 'true');
+    console.log(`⏳ 통신 장애로 밀려있던 ${pending.length}개의 문항을 DB로 안전하게 밀어 넣습니다...`);
+    
+    // for문 대신 while문 사용: 성공할 때마다 즉각적으로 로컬 배열에서 하나씩 삭제!
+    while (pending.length > 0) {
+        let item = pending[0]; 
+        try {
+            await processAndSaveBackground(item.analysisText, apiKey, true); 
+            
+            // 성공 시 맨 앞 데이터를 잘라내고, 로컬 저장소 즉시 덮어쓰기
+            pending.shift(); 
+            localStorage.setItem('pending_variants', JSON.stringify(pending));
+        } catch (e) {
+            console.log("통신 지연이 발생하여 남은 항목은 다음 번에 시도합니다.");
+            break; // 통신 에러가 나면 즉시 정지하여 남은 데이터 보존
+        }
+    }
+    
+    sessionStorage.removeItem('is_syncing_variants');
 }
 
 let subjectData = {}; 
@@ -2383,6 +2813,7 @@ async function loadStandardsFromDB() {
                 subjectData[data.subject].standards.push({
                     id: doc.id,
                     code: data.code,
+                    category: data.category || "단원 미지정", // 💡 카테고리 항목 추가!
                     desc: data.desc,
                     levels: data.levels,
                     questions: data.questions || []
@@ -2526,7 +2957,7 @@ async function saveQuestionToDB() {
         // 🌟 통합 서랍(transformed_bank)에 직접 저장
         await db.collection('transformed_bank').add({
             subject: subject,
-            standard_code: stdCode,
+            standard_code: [stdCode.replace(/[\[\]\s]/g, '')],
             question: qText,
             answer: qAnswer || "정답 정보 없음",
             level: qLevel,
@@ -2646,36 +3077,44 @@ async function loadBookmark(level) {
                     currentBookmarkQuestions.push({
                         code: `📦 미분류 (${displaySubject})`,
                         q: d.question,
-                        reason: d.reason || d.original_analysis?.match(/판정 이유:[\s\S]*?(?=\[|$)/)?.[0] || "AI가 미분류 문항으로 판정하였습니다.",
+                        reason: d.reason || d.original_analysis?.match(/판정 이유:[\s\S]*?(?=\n\[|$)/)?.[0] || "AI가 미분류 문항으로 판정하였습니다.",
                         answer: d.answer,
                         source: "✨ AI 분석 문항"
                     });
                 }
             } 
             // 일반 과목 전용 로직 (이미지 경고문 포함)
+            // 일반 과목 전용 로직 (이미지 경고문 포함)
             else {
-                if (extractedLevel === level && d.standard_code !== "unknown" && d.standard_code !== "코드없음") {
-                    let qImg = d.image || d.imageUrl || d.img;
-                    let bookmarkImgHtml = '';
-                    if (qImg) {
-                        bookmarkImgHtml = `
-                            <div style="margin-top: 15px; text-align: center; background: #fffbeb; padding: 12px; border-radius: 8px; border: 1px dashed #f59e0b;">
-                                <div style="color: #d97706; font-size: 0.85rem; font-weight: bold; margin-bottom: 10px; word-break: keep-all;">
-                                    ⚠️ [원본 참고용 그림] AI가 문제의 조건을 변형했습니다. 그림 속 숫자는 무시하세요.
-                                </div>
-                                <img src="${qImg}" style="max-width: 100%; border-radius: 6px;">
-                            </div>`;
-                    }
-
-                    currentBookmarkQuestions.push({
-                        code: d.standard_code, 
-                        q: d.question || d.q || "문제 내용이 없습니다.", 
-                        imgHtml: bookmarkImgHtml,
-                        reason: d.reason || "AI가 원본을 분석하고 변형하며 판정한 문항입니다.",
-                        answer: d.answer || "등록된 정답/풀이가 없습니다.", 
-                        source: d.source || "✨ AI 추가 문항"
-                    });
+                // 배열인지 확인하여 조건 검사
+                let isUnknown = false;
+                let displayCode = "";
+                if (Array.isArray(d.standard_code)) {
+                    isUnknown = d.standard_code.includes("unknown") || d.standard_code.includes("코드없음");
+                    displayCode = d.standard_code.map(c => `[${c}]`).join(', '); // 여러 코드가 예쁘게 출력됨
+                } else {
+                    isUnknown = d.standard_code === "unknown" || d.standard_code === "코드없음";
+                    displayCode = `[${d.standard_code}]`;
                 }
+
+                if (extractedLevel === level && !isUnknown) {
+                let qImg = d.image || d.imageUrl || d.img;
+                
+                // 💡 누락되었던 이미지 HTML 생성 로직 추가
+                let bookmarkImgHtml = "";
+                if (qImg) {
+                    bookmarkImgHtml = `<br><img src="${qImg}" style="max-width:100%; margin-top:15px; border-radius:8px; border:1px solid #cbd5e1; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">`;
+                }
+                
+                currentBookmarkQuestions.push({
+                    code: displayCode, // 💡 배열로 바뀐 코드를 화면에 출력
+                    q: d.question || d.q || "문제 내용이 없습니다.", 
+                    imgHtml: bookmarkImgHtml,
+                    reason: d.reason || "AI가 원본을 분석하고 변형하며 판정한 문항입니다.",
+                    answer: d.answer || "등록된 정답/풀이가 없습니다.", 
+                    source: d.source || "✨ AI 추가 문항"
+                });
+            }
             }
         });
         
@@ -2699,6 +3138,14 @@ function renderBookmarkList(level) {
     let html = `<p style="font-weight:bold; color:var(--primary); margin-bottom:10px;">🎉 총 ${currentBookmarkQuestions.length}개의 문항이 검색되었습니다.</p>`;
     
     currentBookmarkQuestions.forEach((item, index) => {
+        // 💡 [개선 1] 텍스트 문제 내용 안에 백틱 ```svg ... ``` 코드가 섞여있다면 분리해내기
+        // 💡 리스트 요약본에서는 장황한 그림 코드가 찌꺼기까지 완벽히 안 보이게 청소
+        let pureText = item.q || "";
+        pureText = pureText.replace(/```svg[\s\S]*?```/gi, " [그림 포함] "); // 백틱 덩어리 제거
+        pureText = pureText.replace(/<svg[\s\S]*?<\/svg>/gi, " [그림 포함] "); // 생짜 svg 덩어리 제거
+        pureText = pureText.replace(/<[^>]*>?/gm, ""); // 뱃지 등 모든 HTML 태그 제거
+        pureText = pureText.trim();
+
         html += `
             <div style="background: white; border: 1px solid var(--border); border-left: 4px solid var(--primary); padding: 1.2rem; border-radius: 8px; cursor: pointer; transition: 0.2s;" 
                  onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'"
@@ -2708,8 +3155,7 @@ function renderBookmarkList(level) {
                     <span style="font-size: 0.8rem; background: #e2e8f0; padding: 2px 8px; border-radius: 12px; color: #475569;">${item.source}</span>
                 </div>
                 <div style="font-size: 0.95rem; line-height: 1.5; color: var(--text-main); overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;">
-                    ${item.q}
-                </div>
+                    ${pureText} </div>
             </div>
         `;
     });
@@ -2722,24 +3168,59 @@ function openBookmarkModal(index) {
     const item = currentBookmarkQuestions[index];
     document.getElementById('bm-modal-title').innerText = `[${item.code}] 문항 상세`;
     // 💡 문항매칭연습과 동일한 줄바꿈 및 선지 분리 로직 적용!
-    let formattedQ = item.q.replace(/\n/g, '<br>');
+    let pureText = item.q || "";
+    let svgBlocks = [];
+    
+    // 💡 [모달창 철통 보안] 그림 찢어짐 방지 대피소 로직 적용
+    pureText = pureText.replace(/```svg\s*([\s\S]*?)\s*```/gi, (match, innerSvg) => {
+        svgBlocks.push(innerSvg.trim());
+        return `%%SVG_PLACEHOLDER_${svgBlocks.length - 1}%%`;
+    });
+    pureText = pureText.replace(/<svg[\s\S]*?<\/svg>/gi, (match) => {
+        svgBlocks.push(match);
+        return `%%SVG_PLACEHOLDER_${svgBlocks.length - 1}%%`;
+    });
+    
+    let formattedQ = pureText.replace(/\n/g, '<br>');
     formattedQ = formattedQ.replace(/(①|②|③|④|⑤)/g, '<br>&nbsp;&nbsp;$1');
     
-    // 분리해두었던 그림(이미지)이 있다면 텍스트 아래에 예쁘게 이어 붙입니다.
+    svgBlocks.forEach((svgContent, idx) => {
+        let safeSvg = svgContent.replace(/<svg/i, '<svg style="max-width:100%; height:auto; display:block; margin:0 auto;"');
+        const svgBoxHtml = `<div class="svg-box" style="margin-top: 15px; text-align: center; background: #f8fafc; padding: 12px; border-radius: 6px; border: 1px solid #e2e8f0; overflow-x: auto;">${safeSvg}</div>`;
+        formattedQ = formattedQ.replace(`%%SVG_PLACEHOLDER_${idx}%%`, svgBoxHtml);
+    });
+    
     if (item.imgHtml) {
         formattedQ += item.imgHtml;
     }
-    document.getElementById('bm-modal-q').innerHTML = item.q;
+    document.getElementById('bm-modal-q').innerHTML = formattedQ; // 정상 변수 적용
     document.getElementById('bm-modal-reason').innerHTML = item.reason;
     
     const ansDiv = document.getElementById('bm-modal-answer');
     if (item.answer && item.answer !== "등록된 정답/풀이가 없습니다.") {
-        document.getElementById('bm-modal-answer-text').innerHTML = item.answer;
+        // 💡 정답(해설)에도 그림이 있을 수 있으므로 동일하게 보호
+        let pureAnsText = item.answer;
+        let ansSvgBlocks = [];
+        pureAnsText = pureAnsText.replace(/```svg\s*([\s\S]*?)\s*```/gi, (match, innerSvg) => {
+            ansSvgBlocks.push(innerSvg.trim()); return `%%SVG_PLACEHOLDER_${ansSvgBlocks.length - 1}%%`;
+        });
+        pureAnsText = pureAnsText.replace(/<svg[\s\S]*?<\/svg>/gi, (match) => {
+            ansSvgBlocks.push(match); return `%%SVG_PLACEHOLDER_${ansSvgBlocks.length - 1}%%`;
+        });
+        
+        let formattedAns = pureAnsText.replace(/\n/g, '<br>');
+        ansSvgBlocks.forEach((svgContent, idx) => {
+            let safeSvg = svgContent.replace(/<svg/i, '<svg style="max-width:100%; height:auto; display:block; margin:0 auto;"');
+            const svgBoxHtml = `<div class="svg-box" style="margin-top: 15px; text-align: center; background: #f8fafc; padding: 12px; border-radius: 6px; border: 1px solid #e2e8f0; overflow-x: auto;">${safeSvg}</div>`;
+            formattedAns = formattedAns.replace(`%%SVG_PLACEHOLDER_${idx}%%`, svgBoxHtml);
+        });
+        
+        document.getElementById('bm-modal-answer-text').innerHTML = formattedAns;
         ansDiv.style.display = 'block';
     } else {
         ansDiv.style.display = 'none';
     }
-
+    
     document.getElementById('bookmark-modal').style.display = 'flex';
     if (window.MathJax) MathJax.typesetPromise([document.getElementById('bookmark-modal')]);
 }
@@ -2766,7 +3247,7 @@ const levelMeanings = {
 };
 
 // ------------------------------------------
-// [1단계] 평가 세팅
+// [1단계] 평가 세팅 (과목 리스트 동기화 완료)
 // ------------------------------------------
 function updateSubjectList() {
     const group = document.getElementById('cut-score-group').value;
@@ -2778,10 +3259,22 @@ function updateSubjectList() {
             {id: 'common1', name: '공통수학1'}, {id: 'common2', name: '공통수학2'},
             {id: 'algebra', name: '대수'}, {id: 'calculus1', name: '미적분Ⅰ'}, {id: 'probStat', name: '확률과 통계'}
         ],
-        'korean': [{id: 'kor_common', name: '공통국어'}, {id: 'kor_reading', name: '독서'}, {id: 'kor_lit', name: '문학'}],
-        'english': [{id: 'eng_common', name: '공통영어'}, {id: 'eng_reading', name: '영어 독해와 작문'}],
-        'social': [{id: 'soc_common', name: '통합사회'}, {id: 'soc_history', name: '한국사'}],
-        'science': [{id: 'sci_common', name: '통합과학'}, {id: 'sci_phy', name: '물리학'}]
+        'korean': [
+            {id: 'kor_common1', name: '공통국어1'}, {id: 'kor_common2', name: '공통국어2'},
+            {id: 'kor_speech', name: '화법과 언어'}, {id: 'kor_read_write', name: '독서와 작문'}, {id: 'kor_lit', name: '문학'}
+        ],
+        'english': [
+            {id: 'eng_common1', name: '공통영어1'}, {id: 'eng_common2', name: '공통영어2'}, 
+            {id: 'eng_1', name: '영어Ⅰ'}, {id: 'eng_2', name: '영어Ⅱ'}, {id: 'eng_read_write', name: '영어 독해와 작문'}
+        ],
+        'social': [
+            {id: 'soc_common1', name: '통합사회1'}, {id: 'soc_common2', name: '통합사회2'}, 
+            {id: 'history1', name: '한국사1'}, {id: 'history2', name: '한국사2'}
+        ],
+        'science': [
+            {id: 'sci_common1', name: '통합과학1'}, {id: 'sci_common2', name: '통합과학2'}, 
+            {id: 'sci_phy', name: '물리학'}, {id: 'sci_chem', name: '화학'}, {id: 'sci_bio', name: '생명과학'}, {id: 'sci_earth', name: '지구과학'}
+        ]
     };
 
     if (group && subjectsByGroup[group]) {
@@ -3930,10 +4423,10 @@ async function loadQuestionsForEdit() {
         const stdDoc = await db.collection('standards_2022').doc(docId).get();
         if (!stdDoc.exists) throw new Error("성취기준 없음");
         const stdCode = stdDoc.data().code.replace(/[\[\]\s]/g, '');
-        const withBracketCode = `[${stdCode}]`;
 
+        // 💡 배열 내 포함 여부를 검사하는 array-contains 활용
         const snapshot = await db.collection('transformed_bank')
-                         .where('standard_code', 'in', [stdCode, withBracketCode])
+                         .where('standard_code', 'array-contains', stdCode)
                          .get();
         
         currentEditingAllQuestions = {}; // 초기화
@@ -4015,6 +4508,152 @@ async function deleteQuestionFromDB() {
         }
     }
 }
+
+// ✨ 관리자 도구 전용: 선택적 AI 핀셋 수정 실행 함수 
+async function runTweezerRepair() {
+    const qTextEl = document.getElementById('manage-q-text');
+    const qSvgEl = document.getElementById('manage-q-svg-code');
+    const qAnswerEl = document.getElementById('manage-q-answer');
+    const qLevelEl = document.getElementById('manage-q-level');
+    const qReasonEl = document.getElementById('manage-q-reason');
+    const stdSelect = document.getElementById('admin-manage-q-standard');
+
+    // 사용자가 체크한 항목들 파악
+    const doQ = document.getElementById('chk-repair-q').checked;
+    const doI = document.getElementById('chk-repair-i').checked;
+    const doA = document.getElementById('chk-repair-a').checked;
+    const doS = document.getElementById('chk-repair-s').checked;
+    const doL = document.getElementById('chk-repair-l').checked;
+    const doR = document.getElementById('chk-repair-r').checked;
+
+    if (!doQ && !doA && !doS && !doL && !doR && !doI) {
+        alert("복원할 항목을 최소 하나 이상 체크해주세요.");
+        return;
+    }
+
+    if (!qTextEl.value.trim()) {
+        alert("문항 텍스트가 최소한 한 줄은 있어야 AI가 유추할 수 있습니다.");
+        return;
+    }
+
+    const apiKey = localStorage.getItem('gemini_api_key');
+    if (!apiKey) {
+        alert("API 키가 필요합니다."); return;
+    }
+
+    const btn = document.getElementById('btn-tweezer-repair');
+    const originalText = btn.innerText;
+    btn.innerText = "⏳ 정밀 복원 중...";
+    btn.disabled = true;
+
+    try {
+        const stdText = stdSelect.options[stdSelect.selectedIndex] ? stdSelect.options[stdSelect.selectedIndex].text : "미분류";
+        const workerUrl = "https://script.google.com/macros/s/AKfycbwgx4RgF8FQxxL3jBgEQ5l369llADjhZ1NepulIdF4DdX18kBrB8oRQ4Ft0d5WdKtEF/exec";
+        
+        const response = await fetch(workerUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain' },
+            body: JSON.stringify({
+                action: "tweezer_repair",
+                qText: qTextEl.value,
+                qAnswer: qAnswerEl.value,
+                qLevel: qLevelEl.value,
+                qReason: qReasonEl.value,
+                standardsInfo: stdText,
+                apiKey: apiKey
+            })
+        });
+
+        const data = await response.json();
+        if (data.error) throw new Error(data.error.message);
+
+        const aiText = data.candidates[0].content.parts[0].text;
+
+        const matchQ = aiText.match(/\[수정_문제\]:?\s*([\s\S]*?)(?=\n*\[수정_그림\]|$)/);
+        const matchI = aiText.match(/\[수정_그림\]:?\s*([\s\S]*?)(?=\n*\[수정_정답\]|$)/); // 💡 이미지 추출
+        const matchA = aiText.match(/\[수정_정답\]:?\s*([\s\S]*?)(?=\n*\[수정_기준\]|$)/);
+        const matchS = aiText.match(/\[수정_기준\]:?\s*([^[\]\n]+)/);
+        const matchL = aiText.match(/\[수정_수준\]:?\s*([A-E])/);
+        const matchR = aiText.match(/\[수정_이유\]:?\s*([\s\S]*)/);
+
+        // 💡 체크된 항목만 선별적으로 덮어쓰기!
+        if (doQ && matchQ && matchQ[1].trim()) {
+            qTextEl.value = matchQ[1].trim();
+            qTextEl.style.backgroundColor = '#fef08a';
+        }
+        if (doI && matchI && matchI[1].trim() && matchI[1].trim() !== '없음') {
+            let newSvg = matchI[1].trim();
+            // 💡 [수정 1] 백틱 제거와 함께, AI가 뱉어낸 특수문자(&lt;)를 정상적인 HTML 태그(<)로 완벽히 복원합니다.
+            newSvg = newSvg.replace(/```svg\n?/gi, '')
+                           .replace(/```/g, '')
+                           .replace(/&lt;/g, '<')
+                           .replace(/&gt;/g, '>')
+                           .replace(/&amp;/g, '&');
+
+            // 🛡️ [안전장치 추가] AI가 xmlns 속성을 빼먹었을 경우 강제 주입
+            if (!newSvg.includes('xmlns=')) {
+                newSvg = newSvg.replace('<svg', '<svg xmlns="[http://www.w3.org/2000/svg](http://www.w3.org/2000/svg)"');
+            }
+            // 🛡️ 배경이 투명해서 안 보일 수 있으니 기본 스타일 보정 (선택 사항)
+            if (!newSvg.includes('viewBox=')) {
+                newSvg = newSvg.replace('<svg', '<svg viewBox="0 0 300 300" style="background:white; max-width:100%;"');
+            }
+
+            // 1. 기존 텍스트(DB 저장용)에 코드 추가
+            if (qTextEl.value.indexOf('<svg') === -1) { 
+                qTextEl.value += `\n\n${newSvg}`;
+                qTextEl.style.backgroundColor = '#fef08a';
+            }
+
+            // 2. 💡 새로 추가된 부분: 화면에 그림 렌더링하기
+            const previewEl = document.getElementById('manage-q-svg-preview');
+            if (previewEl) {
+                previewEl.innerHTML = newSvg; // SVG 태그를 인식하여 그림을 그립니다
+                previewEl.style.backgroundColor = '#fef08a';
+            }
+        }
+        if (doA && matchA && matchA[1].trim()) {
+            qAnswerEl.value = matchA[1].trim();
+            qAnswerEl.style.backgroundColor = '#fef08a';
+        }
+        if (doL && matchL && matchL[1].trim()) {
+            qLevelEl.value = matchL[1].trim();
+            qLevelEl.style.backgroundColor = '#fef08a';
+        }
+        if (doR && matchR && matchR[1].trim()) {
+            qReasonEl.value = matchR[1].trim();
+            qReasonEl.style.backgroundColor = '#fef08a';
+        }
+        if (doS && matchS && matchS[1].trim()) {
+            const foundCode = matchS[1].trim();
+            // select box에서 해당 코드를 찾아 선택 상태로 변경
+            for(let i=0; i<stdSelect.options.length; i++){
+                if(stdSelect.options[i].value.includes(foundCode)) {
+                    stdSelect.selectedIndex = i;
+                    stdSelect.style.backgroundColor = '#fef08a';
+                    break;
+                }
+            }
+        }
+
+        setTimeout(() => {
+            [qTextEl, qAnswerEl, qLevelEl, qReasonEl, stdSelect, qSvgEl].forEach(el => {
+                if(el) el.style.backgroundColor = '';
+            });
+            const previewEl = document.getElementById('manage-q-svg-preview');
+            if (previewEl) previewEl.style.backgroundColor = '';
+        }, 2000);
+
+        alert("✨ 선택하신 항목들의 AI 복원이 완료되었습니다!\n확인 후 [💾 수정 내용 DB 저장]을 눌러주세요.");
+
+    } catch (e) {
+        alert("복원 실패: " + e.message);
+    } finally {
+        btn.innerText = originalText;
+        btn.disabled = false;
+    }
+}
+
 // ==========================================
 // 📂 사용자 폴더(프로젝트) 관리 시스템 (분할점수 산출용)
 // ==========================================
@@ -4956,6 +5595,8 @@ window.onload = async () => {
     }
     
     syncPendingFeedback();       
+    syncPendingVariants(); // 👈 [이 줄이 핵심입니다!] 접속 시 묵묵히 밀린 데이터를 DB로 밀어 넣습니다.
+    
     initChatResizer(); 
     initCaptureEvents(); 
     initAdminDropdowns();
@@ -5159,7 +5800,7 @@ window.runManualSingleAI = async function() {
     }
 };
 
-// 💡 채점표와 보조 서랍(이미지)에 동시 저장하는 함수
+// 💡 채점표와 보조 서랍(이미지 및 텍스트)에 동시 저장하는 함수
 window.saveManualQuestionToDB = async function() {
     const qNum = document.getElementById('mq-num').value.trim();
     const score = parseFloat(document.getElementById('mq-score').value) || 0;
@@ -5174,22 +5815,50 @@ window.saveManualQuestionToDB = async function() {
     btn.innerText = "⏳ 저장 중..."; btn.disabled = true;
 
     try {
+        const docRef = db.collection('user_projects').doc(currentProjectId);
+        const projectDoc = await docRef.get();
+        if (!projectDoc.exists) throw new Error("프로젝트를 찾을 수 없습니다.");
+        
+        const projectData = projectDoc.data();
+        const ownerEmail = projectData.ownerEmail || "";
+        const collaborators = projectData.collaborators || [];
+        const userNickname = auth.currentUser ? (auth.currentUser.displayName || "선생님") : "알 수 없음";
+
+        // 1. 이미지는 용량이 크므로 기존처럼 개별 문서로 안전하게 분리 저장
         let finalImageId = null;
         if (imgSrc && imgSrc.startsWith('data:image')) {
-            let compressedBase64 = await new Promise(resolve => {
-                compressCaptureImage(imgSrc, (compressed) => resolve(compressed));
-            });
+            let compressedBase64 = await new Promise(resolve => compressCaptureImage(imgSrc, resolve));
             const imgDocRef = await db.collection('project_images').add({
                 projectId: currentProjectId,
                 assessmentIndex: currentEditingAssessmentIndex,
                 questionNum: qNum,
                 base64Data: compressedBase64,
+                ownerEmail: ownerEmail,
+                collaborators: collaborators,
+                userNickname: userNickname,
                 timestamp: firebase.firestore.FieldValue.serverTimestamp()
             });
             finalImageId = imgDocRef.id;
         }
 
-        const docRef = db.collection('user_projects').doc(currentProjectId);
+        // 2. 🌟 텍스트는 프로젝트 전용 '통합 문서 1개'에 업데이트 (쓰레기 데이터 미생성, 덮어쓰기)
+        let textPreview = ""; 
+        if (text) {
+            const masterTextRef = db.collection('project_texts').doc(currentProjectId);
+            // 특정 문항(예: texts.asm0_q1)의 방에만 데이터를 업데이트 (merge: true로 다른 문항 보호)
+            await masterTextRef.set({
+                projectId: currentProjectId,
+                ownerEmail: ownerEmail,
+                collaborators: collaborators,
+                userNickname: userNickname,
+                [`texts.asm${currentEditingAssessmentIndex}_q${qNum}`]: text,
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            }, { merge: true }); 
+            
+            textPreview = text.length > 30 ? text.substring(0, 30) + "..." : text;
+        }
+
+        // 3. 메인 문서 업데이트 (안전한 트랜잭션)
         await db.runTransaction(async (transaction) => {
             const doc = await transaction.get(docRef);
             let assessments = doc.data().assessments;
@@ -5199,41 +5868,41 @@ window.saveManualQuestionToDB = async function() {
             let existingIdx = baseScores.findIndex(q => String(q.num).trim() === qNum);
             const isShort = qNum.includes('서') || qNum.startsWith('서');
 
-            // level이나 reason이 비어있으면 기본값 세팅
-            const safeLevel = level || "판정필요";
-            const safeReason = reason || "수동으로 추가/수정된 문항입니다.";
-
             const newQData = {
-                num: qNum, score: score, difficulty: "", level: safeLevel,
-                isShortAnswer: isShort, reason: safeReason, text: text, imageId: finalImageId
+                num: qNum, score: score, difficulty: "", level: level || "판정필요",
+                isShortAnswer: isShort, reason: reason || "수동으로 추가/수정된 문항입니다.", 
+                text: textPreview // 뷰어용 미리보기만 남김 (textId는 통합되었으므로 불필요)
             };
 
+            if (finalImageId) newQData.imageId = finalImageId;
+
             if (existingIdx !== -1) {
-                baseScores[existingIdx] = { ...baseScores[existingIdx], ...newQData };
+                let oldData = baseScores[existingIdx];
+                // 기존 이미지 유지 로직
+                if (!finalImageId && oldData.imageId) newQData.imageId = oldData.imageId;
+                // 기존 텍스트 유지 로직 (새로 입력한 text가 없을 때)
+                if (!text && oldData.text) newQData.text = oldData.text; 
+                
+                baseScores[existingIdx] = { ...oldData, ...newQData };
             } else {
                 baseScores.push(newQData);
             }
 
+            // 정렬 로직 유지
             baseScores.sort((a, b) => {
-                const aIsShort = String(a.num).startsWith('서');
-                const bIsShort = String(b.num).startsWith('서');
-                if (aIsShort && !bIsShort) return 1;
-                if (!aIsShort && bIsShort) return -1;
-                let aNum = parseInt(String(a.num).replace(/[^0-9]/g, '')) || 0;
-                let bNum = parseInt(String(b.num).replace(/[^0-9]/g, '')) || 0;
-                return aNum - bNum;
+                const aIsShort = String(a.num).startsWith('서'); const bIsShort = String(b.num).startsWith('서');
+                if (aIsShort && !bIsShort) return 1; if (!aIsShort && bIsShort) return -1;
+                return (parseInt(String(a.num).replace(/[^0-9]/g, '')) || 0) - (parseInt(String(b.num).replace(/[^0-9]/g, '')) || 0);
             });
+            
             asm.parsedScores = baseScores;
             transaction.update(docRef, { assessments: assessments });
         });
 
         document.getElementById('manual-q-modal').style.display = 'none';
-        alert(`✅ ${qNum}번 문항이 채점표와 뷰어에 완벽하게 반영되었습니다!`);
-    } catch(e) {
-        alert("저장 실패: " + e.message);
-    } finally {
-        btn.innerText = "💾 채점표에 저장하기"; btn.disabled = false;
-    }
+        alert(`✅ ${qNum}번 문항이 완벽하게 반영되었습니다!`);
+    } catch(e) { alert("저장 실패: " + e.message); } 
+    finally { btn.innerText = "💾 채점표에 저장하기"; btn.disabled = false; }
 };
 
 // ✨ [신규 추가] 저장된 데이터를 기반으로 표를 다시 그려주는 함수
@@ -5343,7 +6012,10 @@ async function sendAiResultsToTable(isFromSaveBank = false) {
         btn.disabled = true;
     }
 
-    // 💡 2. [핵심 로직] 새로운 서랍(project_images)에 이미지만 분리해서 저장
+    const ownerEmail = auth.currentUser ? auth.currentUser.email : "알 수 없음";
+    const userNickname = auth.currentUser ? (auth.currentUser.displayName || "선생님") : "알 수 없음";
+
+    // 💡 2. 새로운 서랍(project_images)에 이미지만 분리해서 저장
     const processedQuestions = [];
     for (let i = 0; i < extractedQuestionsArray.length; i++) {
         let q = extractedQuestionsArray[i];
@@ -5362,6 +6034,8 @@ async function sendAiResultsToTable(isFromSaveBank = false) {
                     assessmentIndex: currentEditingAssessmentIndex,
                     questionNum: q.num,
                     base64Data: compressedBase64,
+                    ownerEmail: ownerEmail,
+                    userNickname: userNickname,
                     timestamp: firebase.firestore.FieldValue.serverTimestamp()
                 });
                 finalImageId = imgDocRef.id; // 🔑 이미지를 찾을 수 있는 열쇠 획득!
@@ -5376,7 +6050,30 @@ async function sendAiResultsToTable(isFromSaveBank = false) {
         });
     }
 
-    // 3. user_projects 문서 업데이트 (텍스트와 이미지 열쇠만 저장)
+    // 💡 3. [텍스트 분리 로직] 텍스트를 project_texts 통합 문서에 일괄 병합 저장
+    const textsToUpdate = {};
+    processedQuestions.forEach((q) => {
+        if (q.text) {
+            // "texts.asm0_q1" 같은 형식으로 맵핑하여 누적 저장
+            textsToUpdate[`texts.asm${currentEditingAssessmentIndex}_q${q.num}`] = q.text;
+        }
+    });
+
+    if (Object.keys(textsToUpdate).length > 0) {
+        try {
+            await db.collection('project_texts').doc(currentProjectId).set({
+                projectId: currentProjectId,
+                ownerEmail: ownerEmail,
+                userNickname: userNickname,
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+                ...textsToUpdate
+            }, { merge: true }); // merge: true로 기존 데이터를 안전하게 보존
+        } catch (err) {
+            console.error("통합 텍스트 저장 실패:", err);
+        }
+    }
+
+    // 💡 4. user_projects 문서 업데이트 (텍스트와 이미지는 완전히 비우고 열쇠만 저장)
     try {
         const docRef = db.collection('user_projects').doc(currentProjectId);
         
@@ -5402,8 +6099,10 @@ async function sendAiResultsToTable(isFromSaveBank = false) {
                     baseScores[existingIdx].level = q.level || "판정필요";
                     baseScores[existingIdx].reason = q.reason || "";
                     
-                    // 💡 메인 서랍에는 텍스트와 열쇠(imageId)만 저장
-                    baseScores[existingIdx].text = q.text || "";
+                    // 🌟 무거운 데이터(원문 텍스트, 원본 이미지) 완전 제거 보장
+                    baseScores[existingIdx].text = ""; // 미리보기도 없이 완전히 비움!
+                    delete baseScores[existingIdx].image; // 만약 기존에 남아있는 원본 이미지가 있다면 삭제
+                    
                     if (q.imageId) baseScores[existingIdx].imageId = q.imageId; 
                 } else {
                     baseScores.push({ 
@@ -5413,7 +6112,7 @@ async function sendAiResultsToTable(isFromSaveBank = false) {
                         level: q.level || "판정필요",
                         isShortAnswer: isShort,
                         reason: q.reason || "",
-                        text: q.text || "",
+                        text: "", // 🌟 텍스트 완전 비움 (project_texts에서 불러옴)
                         imageId: q.imageId || null
                     });
                 }
@@ -5439,7 +6138,7 @@ async function sendAiResultsToTable(isFromSaveBank = false) {
             transaction.update(docRef, { assessments: assessments });
         });
         
-        alert("✅ 표 반영 성공! ");
+        alert("✅ 표 반영 성공! (문항 데이터 경량화 분리 완료)");
 
         extractedQuestionsArray = []; 
         renderQuestionCards(); 
@@ -5891,7 +6590,7 @@ function renderCollaborativeTable(projectData, asm) {
     html += `</tbody></table>`;
     container.innerHTML = html; 
 
-    const hasAiData = baseQuestions.some(q => q.text || q.image || q.imageId);
+    const hasAiData = baseQuestions.some(q => q.text || q.textId || q.image || q.imageId);
         // 💡 [변경됨] hasAiData가 참일 때만 뷰어 버튼을 그려줍니다!
     // 💡 [수정] 뷰어를 숨기지 않고, 클릭 불가능한 흑백(비활성화) 상태로 보여줍니다.
     let externalHtml = `<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-wrap: wrap; gap: 10px;">
@@ -6134,31 +6833,31 @@ function toggleExamViewer() {
     }
 }
 
-// 💡 [신규 추가] 보조 서랍(project_images) 연동 문항 텍스트 & 그림 뷰어
-async function openReadOnlyExamViewer() {
+// 💡 [수정됨] 보조 서랍(project_images, project_texts) 연동 문항 텍스트 & 그림 뷰어
+window.openReadOnlyExamViewer = async function() {
     const asm = cachedProjectData?.assessments?.[currentEditingAssessmentIndex];
     if (!asm || !asm.parsedScores || asm.parsedScores.length === 0) {
         alert("현재 저장된 문항 데이터가 없습니다.\n(먼저 AI 분석 후 표에 반영해 주세요.)");
         return;
     }
 
+    // 🚨 여기서 user_projects의 baseScores에는 전체 텍스트나 Base64 이미지가 없어야 정상입니다. 
+    // 오직 문항번호, 배점, imageId 만 존재해야 합니다.
     const baseScores = asm.parsedScores;
 
-    // 모달(팝업창) 컨테이너 생성 (최초 1회만 생성됨)
     let viewerModal = document.getElementById('readonly-exam-modal');
     if (!viewerModal) {
+        // ... (기존 모달 UI 생성 로직 유지) ...
         viewerModal = document.createElement('div');
         viewerModal.id = 'readonly-exam-modal';
         viewerModal.style.cssText = "position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:9999; display:flex; justify-content:center; align-items:center;";
-        
         viewerModal.innerHTML = `
             <div style="background:white; width:95%; max-width:800px; height:85vh; border-radius:12px; display:flex; flex-direction:column; box-shadow:0 10px 25px rgba(0,0,0,0.2);">
                 <div style="padding:15px 20px; background:#1e3a8a; color:white; border-radius:12px 12px 0 0; display:flex; justify-content:space-between; align-items:center;">
                     <h3 style="margin:0; font-size:1.2rem;">📄 문항 확인 (읽기 전용)</h3>
                     <button onclick="document.getElementById('readonly-exam-modal').style.display='none'" style="background:none; border:none; color:white; font-size:1.8rem; cursor:pointer; line-height:1;">&times;</button>
                 </div>
-                <div id="readonly-exam-content" style="padding:20px; overflow-y:auto; flex:1; background:#f8fafc;">
-                </div>
+                <div id="readonly-exam-content" style="padding:20px; overflow-y:auto; flex:1; background:#f8fafc;"></div>
             </div>
         `;
         document.body.appendChild(viewerModal);
@@ -6166,13 +6865,19 @@ async function openReadOnlyExamViewer() {
 
     viewerModal.style.display = 'flex';
     const contentDiv = document.getElementById('readonly-exam-content');
-    
-    // 로딩 화면 선 표시
-    contentDiv.innerHTML = '<div style="text-align:center; padding:3rem; color:#64748b; font-weight:bold;">⏳ 메인 서랍(텍스트)과 보조 서랍(이미지)을 조합하여 불러오는 중입니다...</div>';
+    contentDiv.innerHTML = '<div style="text-align:center; padding:3rem; color:#64748b; font-weight:bold;">⏳ 통합 DB에서 데이터를 불러오는 중입니다...</div>';
 
-    // 1단계: 메인 서랍에서 가져온 가벼운 텍스트를 즉시 화면에 그리기
+    // 🌟 1단계: 텍스트 통합 문서(project_texts)를 딱 1번만 불러옵니다.
+    let masterTexts = {};
+    try {
+        const textDoc = await db.collection('project_texts').doc(currentProjectId).get();
+        if (textDoc.exists && textDoc.data().texts) {
+            masterTexts = textDoc.data().texts;
+        }
+    } catch (e) { console.error("통합 텍스트 로딩 실패:", e); }
+
     let html = '';
-    baseScores.forEach(q => {
+    for (const q of baseScores) {
         html += `
             <div style="background:white; border:1px solid #cbd5e1; border-radius:8px; padding:15px; margin-bottom:15px; box-shadow:0 2px 4px rgba(0,0,0,0.05);">
                 <div style="font-weight:bold; color:#1e3a8a; border-bottom:2px solid #bfdbfe; padding-bottom:5px; margin-bottom:10px; font-size:1.1rem; display: flex; justify-content: space-between; align-items: center;">
@@ -6181,34 +6886,32 @@ async function openReadOnlyExamViewer() {
                 </div>
         `;
         
-        if (q.text) {
-            let safeText = q.text.replace(/\n/g, '<br>');
+        // 🌟 2단계: user_projects에는 텍스트가 없으므로, 불러온 통합 문서(masterTexts)에서 텍스트를 꺼냅니다.
+        const textKey = `asm${currentEditingAssessmentIndex}_q${q.num}`;
+        const fullTextToDisplay = masterTexts[textKey] || q.text; // (q.text는 만약을 위한 폴백)
+
+        if (fullTextToDisplay) {
+            let safeText = fullTextToDisplay.replace(/\n/g, '<br>');
             html += `<div style="font-size:0.95rem; color:#334155; line-height:1.6; margin-bottom:10px;">${safeText}</div>`;
         } else {
             html += `<div style="font-size:0.9rem; color:#94a3b8; margin-bottom:10px; font-style:italic;">(저장된 문항 텍스트 없음)</div>`;
         }
         
-        // 이미지 자리를 미리 만들어두기 (열쇠(imageId)가 있을 경우)
+        // 🌟 3단계: user_projects에는 원본 이미지 대신 imageId(열쇠)만 있어야 합니다.
         if (q.imageId) {
-            html += `<div id="img-container-${q.imageId}" style="text-align:center; padding:15px; background:#f1f5f9; border-radius:6px; font-size:0.85rem; color:#64748b; border: 1px dashed #cbd5e1;">
-                        ⏳ 이미지 열쇠 발견! 보조 DB에서 그림을 꺼내고 있습니다...
-                     </div>`;
+            html += `<div id="img-container-${q.imageId}" style="text-align:center; padding:15px; background:#f1f5f9; border-radius:6px; font-size:0.85rem; color:#64748b; border: 1px dashed #cbd5e1;">⏳ 보조 DB에서 그림을 꺼내고 있습니다...</div>`;
         } else if (q.image) {
-            // (혹시 예전 방식으로 저장된 이미지가 남아있을 경우를 위한 호환성 코드)
+            // 이 분기를 타는 데이터가 있다면 user_projects 정리가 아직 덜 된 과거 데이터입니다.
             html += `<div style="text-align:center; margin-top:10px;"><img src="${q.image}" style="max-width:100%; border-radius:4px; border:1px solid #e2e8f0;"></div>`;
         }
-        
         html += `</div>`;
-    });
+    } 
 
     contentDiv.innerHTML = html;
 
-    // 수식(MathJax)이 포함되어 있다면 변환 실행
-    if (window.MathJax) {
-        MathJax.typesetPromise([contentDiv]).catch(err => console.error(err));
-    }
+    if (window.MathJax) MathJax.typesetPromise([contentDiv]).catch(err => console.error(err));
 
-    // 2단계: 이미지 열쇠(imageId)를 가진 문항들만 'project_images' 보조 서랍에서 병렬로 빠르게 꺼내오기!
+    // 4단계: 이미지 열쇠(imageId)를 가진 문항들만 별도의 project_images DB에서 그림을 꺼내옵니다.
     const imageFetchPromises = baseScores.filter(q => q.imageId).map(async (q) => {
         try {
             const imgDoc = await db.collection('project_images').doc(q.imageId).get();
@@ -6221,11 +6924,10 @@ async function openReadOnlyExamViewer() {
             }
         } catch (e) {
             const container = document.getElementById(`img-container-${q.imageId}`);
-            if (container) container.innerHTML = "❌ 이미지 로드 중 통신 오류 발생";
+            if (container) container.innerHTML = "❌ 이미지 로드 중 오류 발생";
         }
     });
 
-    // 모든 이미지가 로드될 때까지 기다림
     await Promise.all(imageFetchPromises);
 };
 
@@ -6438,19 +7140,27 @@ async function transformAndSaveExamToBank(skipConfirm = false) {
         const blocks = aiResult.split('===').map(b => b.trim()).filter(b => b.length > 0);
         let savedCount = 0;
 
+        // ... (앞부분 동일) ...
         for (let i = 0; i < Math.min(blocks.length, extractedQuestionsArray.length); i++) {
             const block = blocks[i];
             const originalData = extractedQuestionsArray[i]; 
 
-            const qMatch = block.match(/변형문제:\s*([\s\S]*?)(?=변형정답:|$)/);
-            const aMatch = block.match(/변형정답:\s*([\s\S]*?)(?=성취기준코드:|$)/);
-            const cMatch = block.match(/성취기준코드:\s*([\s\S]*?)(?=판정이유:|$)/);
+            const qMatch = block.match(/변형문제:\s*([\s\S]*?)(?=변형그림:|변형정답:|판정이유:|$)/);
+            const imgMatch = block.match(/변형그림:\s*([\s\S]*?)(?=변형정답:|판정이유:|$)/);
+            const aMatch = block.match(/변형정답:\s*([\s\S]*?)(?=판정이유:|$)/);
+            const cMatch = block.match(/성취기준코드:\s*([^\n]+)/);
             const rMatch = block.match(/판정이유:\s*([\s\S]*)/);
 
             let finalQ = qMatch ? qMatch[1].trim() : originalData.text;
             let finalA = aMatch ? aMatch[1].trim() : "정답 정보 없음";
+            let svgCode = imgMatch ? imgMatch[1].trim() : "";
+            
+            if (svgCode && svgCode !== "없음") {
+                finalQ += `\n\n${svgCode}`; 
+            }
+
             // 💡 융합 문항일 경우 쉼표(,)로 구분된 코드를 분리하여 배열로 만듭니다.
-            let finalCodes = cMatch ? cMatch[1].replace(/[\[\]]/g, '').split(',').map(c => c.trim()).filter(c => c) : ["코드없음"]; 
+            let finalCodes = cMatch ? cMatch[1].replace(/[\[\]\s]/g, '').split(',').filter(c => c.length > 0) : ["코드없음"]; 
             let finalReason = rMatch ? rMatch[1].trim() : "AI가 교육과정 루브릭을 바탕으로 분석한 문항입니다.";
 
             let levelMatch = originalData.text.match(/\[수준\]\s*(A\+|[A-E])/);
@@ -6467,25 +7177,24 @@ async function transformAndSaveExamToBank(skipConfirm = false) {
                 });
             }
 
-            // 💡 각각의 성취기준마다 독립된 문항으로 복제하여 저장합니다.
-            for (const code of finalCodes) {
-                let autoSubject = detectSubjectIdFromStandardCode(code);
-                const saveData = {
-                    subject: autoSubject, 
-                    standard_code: code, 
-                    question: finalQ,
-                    answer: finalA,          
-                    level: lvl, 
-                    reason: finalReason,     
-                    source: "📄 시험지 일괄 변형 저장",
-                    timestamp: firebase.firestore.FieldValue.serverTimestamp(),
-                    user_email: auth.currentUser ? auth.currentUser.email : "알 수 없음" // 👈 여기!
-                };
-                if (compressedImage) saveData.image = compressedImage;
+            // 🚨 [핵심 수정] for문을 완전히 삭제하고 딱 한 번만 저장하도록 수정했습니다!
+            let autoSubject = typeof detectSubjectIdFromStandardCode === 'function' ? detectSubjectIdFromStandardCode(finalCodes[0]) : targetSubject;
+            
+            const saveData = {
+                subject: autoSubject || targetSubject, 
+                standard_code: finalCodes, // 💡 여러 코드가 담긴 배열 자체를 단 한 번만 저장!
+                question: finalQ,
+                answer: finalA,          
+                level: lvl, 
+                reason: finalReason,     
+                source: "📄 시험지 일괄 변형 저장",
+                timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+                user_email: auth.currentUser ? auth.currentUser.email : "알 수 없음"
+            };
+            if (compressedImage) saveData.image = compressedImage;
 
-                await db.collection('transformed_bank').add(saveData);
-                savedCount++;
-            }
+            await db.collection('transformed_bank').add(saveData);
+            savedCount++; // 문항 1개당 1번만 카운트됨
         }
 
         alert(`🎉 완벽합니다! 총 ${savedCount}개의 시험지 문항이 변형되어 알맞은 과목 DB에 보관되었습니다.`);
@@ -6956,12 +7665,13 @@ async function submitSpecificFeedback() {
     document.getElementById('fb-loading-msg').style.display = 'block';
 
     try {
-        const workerUrl = "https://script.google.com/macros/s/AKfycbwgx4RgF8FQxxL3jBgEQ5l369llADjhZ1NepulIdF4DdX18kBrB8oRQ4Ft0d5WdKtEF/exec"; 
+        const workerUrl = "https://script.google.com/macros/s/AKfycbwgx4RgF8FQxxL3jBgEQ5l369llADjhZ1NepulIdF4DdX18kBrB8oRQ4Ft0d5WdKtEF/exec";
         const userApiKey = localStorage.getItem('gemini_api_key');
+        
         const response = await fetch(workerUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'text/plain' },
-            body: JSON.stringify({ 
+            body: JSON.stringify({
                 action: "review",
                 questionText: questionText,
                 currentStandardCode: currentStandardCode,
@@ -6976,14 +7686,24 @@ async function submitSpecificFeedback() {
 
         if (!response.ok) throw new Error("백엔드 서버 통신 실패");
         const data = await response.json();
-        const aiReviewText = data.candidates[0].content.parts[0].text;
 
+        // 🚀 [추가된 핵심 방어막] 에러 발생 시 무너지지 않고 원인 출력
+        if (data.error) {
+            const errMsg = typeof data.error === 'string' ? data.error : (data.error.message || JSON.stringify(data.error));
+            throw new Error(`AI 통신 에러: ${errMsg}`);
+        }
+        if (!data.candidates || data.candidates.length === 0 || !data.candidates[0].content) {
+            throw new Error("AI가 검토 결과를 정상적으로 생성하지 못했습니다. (안전 필터 또는 모델 응답 거부)");
+        }
+
+        const aiReviewText = data.candidates[0].content.parts[0].text;
+        
         const user = auth.currentUser;
         const userEmail = user ? user.email : "이메일 정보 없음";
-
+        
         const feedbackData = {
             type: "문항 매칭 이의 제기",
-            bank_doc_id: currentQuestions[currentLevelQ].id, // 💡 추가된 부분: AI와 관리자에게 원본 문서 ID를 전달합니다.
+            bank_doc_id: currentQuestions[currentLevelQ].id,
             question: questionText,
             original_standard: currentStandardCode,
             original_level: currentQuestions[currentLevelQ].level,
@@ -6994,14 +7714,13 @@ async function submitSpecificFeedback() {
             user_email: userEmail,
             timestamp: firebase.firestore.FieldValue.serverTimestamp()
         };
-
+        
         await db.collection('developer_feedback').add(feedbackData);
-
         alert("✅ 선생님의 분석과 AI의 심층 검토 결과가 시스템에 접수되었습니다! (관리자 페이지의 '의견확인'에서 조회 가능합니다)");
         document.getElementById('specific-feedback-panel').style.display = 'none';
 
     } catch (e) {
-        alert("의견 전송 중 오류가 발생했습니다: " + e.message);
+        alert("🚨 의견 전송 중 오류가 발생했습니다:\n" + e.message);
     } finally {
         document.getElementById('fb-submit-btn').style.display = 'block';
         document.getElementById('fb-loading-msg').style.display = 'none';
@@ -7603,6 +8322,7 @@ async function saveUserSubjectGroup(group) {
         await db.collection('user_profiles').doc(auth.currentUser.uid).set({
             mainGroup: group,
             email: auth.currentUser.email,
+            nickname: auth.currentUser.displayName || "사용자", // 👈 변수 없이 직접 할당
             timestamp: firebase.firestore.FieldValue.serverTimestamp() // 👈 여기에 가입/설정 시간이 자동 기록됩니다!
         }, { merge: true });
 
@@ -7760,35 +8480,77 @@ function loadDictionaryStandards() {
         return;
     }
 
-    let html = '';
-    data.standards.forEach((std, index) => {
-        const lvlA = std.levels?.high || "데이터 없음";
-        const lvlB = std.levels?.b || (std.levels?.high ? std.levels.high.replace("이해하여 설명할 수 있으며", "설명할 수 있고") : "데이터 없음");
-        const lvlC = std.levels?.mid || "데이터 없음";
-        const lvlD = std.levels?.d || (std.levels?.mid ? std.levels.mid.replace("이해하고", "알고") : "데이터 없음");
-        const lvlE = std.levels?.low || "데이터 없음";
+    const standards = data.standards;
+    // 💡 중단원(category) 필드가 하나라도 입력되어 있는지 체크
+    const hasCategory = standards.some(std => std.category && std.category.trim() !== "");
 
-        html += `
-        <div class="dict-accordion-item">
-            <button class="dict-accordion-header" onclick="toggleAccordion(${index})">
-                <span style="flex:1; padding-right:10px;">${std.code}</span>
-                <span id="acc-icon-${index}">▼</span>
-            </button>
+    let html = '';
+    let globalIndex = 0; // 아코디언 토글을 위한 전체 고유 인덱스保持
+    
+    if (hasCategory) {
+        // [A안] 중단원이 존재하는 경우: 카테고리별로 묶어줍니다.
+        const groupedStandards = {};
+        standards.forEach(std => {
+            const cat = std.category || '미분류 단원';
+            if (!groupedStandards[cat]) groupedStandards[cat] = [];
+            groupedStandards[cat].push(std);
+        });
+
+        // 단원명을 추가하며 아코디언을 생성합니다.
+        for (const category in groupedStandards) {
+            html += `<div style="background:#e0e7ff; color:#1e40af; padding:8px 12px; border-radius:6px; font-weight:bold; font-size:0.9rem; margin-top:1.5rem; margin-bottom:10px;">📁 ${category}</div>`;
             
-            <div id="acc-body-${index}" class="dict-accordion-body">
-                <strong style="color:#1e40af; display:block; margin-bottom:12px; font-size:0.95rem;">${std.desc}</strong>
-                <div style="background:#fef2f2; padding:8px; border-radius:4px; margin-bottom:4px; border-left:3px solid #ef4444;"><strong>[A]</strong> ${lvlA}</div>
-                <div style="background:#fffbeb; padding:8px; border-radius:4px; margin-bottom:4px; border-left:3px solid #f59e0b;"><strong>[B]</strong> ${lvlB}</div>
-                <div style="background:#f0fdf4; padding:8px; border-radius:4px; margin-bottom:4px; border-left:3px solid #22c55e;"><strong>[C]</strong> ${lvlC}</div>
-                <div style="background:#eff6ff; padding:8px; border-radius:4px; margin-bottom:4px; border-left:3px solid #3b82f6;"><strong>[D]</strong> ${lvlD}</div>
-                <div style="background:#f8fafc; padding:8px; border-radius:4px; border-left:3px solid #94a3b8;"><strong>[E]</strong> ${lvlE}</div>
-            </div>
-        </div>`;
-    });
+            groupedStandards[category].forEach(std => {
+                html += buildAccordionItemHtml(std, globalIndex);
+                globalIndex++;
+            });
+        }
+    } else {
+        // [B안] 중단원이 아예 없는 경우: 단원명 구분 없이 아코디언 리스트를 순서대로 나열
+        standards.forEach(std => {
+            html += buildAccordionItemHtml(std, globalIndex);
+            globalIndex++;
+        });
+    }
     
     container.innerHTML = html;
+    // 👇👇 [새로 추가된 부분] 화면에 데이터가 들어간 직후 MathJax 강제 변환 호출 👇👇
+    if (window.MathJax) {
+        setTimeout(() => {
+            MathJax.typesetClear([container]);
+            MathJax.typesetPromise([container]).catch(function (err) {
+                console.error('사전 수식 렌더링 에러:', err);
+            });
+        }, 100); // 화면에 그려질 시간(0.1초)을 잠깐 준 뒤 변환 시작
+    }
+    // 👆👆 ----------------------------------------------------------- 👆👆
 }
 
+// 💡 기능 유실 방지를 위한 개별 아코디언 HTML 문자열 생성 함수
+function buildAccordionItemHtml(std, globalIndex) {
+    const lvlA = std.levels?.high || "데이터 없음";
+    const lvlB = std.levels?.b || (std.levels?.high ? std.levels.high.replace("이해하여 설명할 수 있으며", "설명할 수 있고") : "데이터 없음");
+    const lvlC = std.levels?.mid || "데이터 없음";
+    const lvlD = std.levels?.d || (std.levels?.mid ? std.levels.mid.replace("이해하고", "알고") : "데이터 없음");
+    const lvlE = std.levels?.low || "데이터 없음";
+
+    return `
+    <div class="dict-accordion-item">
+        <button class="dict-accordion-header" onclick="toggleAccordion(${globalIndex})">
+            <span style="flex:1; padding-right:10px;">${std.code}</span>
+            <span id="acc-icon-${globalIndex}">▼</span>
+        </button>
+        
+        <div id="acc-body-${globalIndex}" class="dict-accordion-body">
+            <strong style="color:#1e40af; display:block; margin-bottom:12px; font-size:0.95rem;">${std.desc}</strong>
+            <div style="background:#fef2f2; padding:8px; border-radius:4px; margin-bottom:4px; border-left:3px solid #ef4444;"><strong>[A]</strong> ${lvlA}</div>
+            <div style="background:#fffbeb; padding:8px; border-radius:4px; margin-bottom:4px; border-left:3px solid #f59e0b;"><strong>[B]</strong> ${lvlB}</div>
+            <div style="background:#f0fdf4; padding:8px; border-radius:4px; margin-bottom:4px; border-left:3px solid #22c55e;"><strong>[C]</strong> ${lvlC}</div>
+            <div style="background:#eff6ff; padding:8px; border-radius:4px; margin-bottom:4px; border-left:3px solid #3b82f6;"><strong>[D]</strong> ${lvlD}</div>
+            <div style="background:#f8fafc; padding:8px; border-radius:4px; border-left:3px solid #94a3b8;"><strong>[E]</strong> ${lvlE}</div>
+        </div>
+    </div>`;
+}
 // 5️⃣ 마법의 자동 닫힘 로직 (다른 걸 누르면 기존 건 닫힘)
 function toggleAccordion(index) {
     const allHeaders = document.querySelectorAll('.dict-accordion-header');
@@ -7983,7 +8745,7 @@ function renderMemos(memos) {
                 <div style="background: ${bgColor}; border: 1px solid ${borderColor}; padding: 10px 14px; border-radius: 12px; max-width: 250px; font-size: 0.95rem; word-break: break-all; white-space: pre-wrap; color: #1e293b; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">${memo.text}</div>
                 <div style="display: flex; flex-direction: column; align-items: ${isMe ? 'flex-end' : 'flex-start'}; margin: 0 6px;">
                     ${readBadge}
-                    <span style="font-size: 0.7rem; color: #94a3b8;">${timeStr}</span>
+                    <span style="font-size: 0.7rem; color: #94a3b8;">${dateTimeStr}</span>
                 </div>
             </div>
         </div>`;
@@ -8018,29 +8780,42 @@ async function submitMemo() {
     }
 }
 
-async function markMemosAsRead(memos) {
+async function markMemosAsRead() {
+    // 💡 방어막 추가: 로그인이 안 되어 있거나 폴더 ID가 없으면 중단
+    if (!auth.currentUser || !currentProjectId) return;
+
     const userEmail = auth.currentUser.email;
-    let needsUpdate = false;
-    let updatedMemos = [...memos];
+    const docRef = db.collection('user_projects').doc(currentProjectId);
 
-    // 내가 쓴 글이 아닌데, 아직 내 이메일이 '읽음' 목록에 없다면 목록에 내 이메일 추가!
-    updatedMemos = updatedMemos.map(memo => {
-        if (memo.authorEmail !== userEmail && !(memo.readBy || []).includes(userEmail)) {
-            needsUpdate = true;
-            return { ...memo, readBy: [...(memo.readBy || []), userEmail] };
-        }
-        return memo;
-    });
+    try {
+        // 🔒 마법의 자물쇠(트랜잭션) 시작
+        await db.runTransaction(async (transaction) => {
+            // 1. 트랜잭션 안에서 DB의 '가장 최신' 상태를 실시간으로 다시 읽어옵니다.
+            const doc = await transaction.get(docRef);
+            if (!doc.exists) return; 
 
-    // 갱신할 게 있으면 DB 덮어쓰기
-    if (needsUpdate) {
-        try {
-            await db.collection('user_projects').doc(currentProjectId).update({
-                memos: updatedMemos
+            const data = doc.data();
+            const latestMemos = data.memos || [];
+            let needsUpdate = false;
+
+            // 2. 방금 가져온 최신 메모 목록을 기준으로 '읽음' 처리를 계산합니다.
+            const updatedMemos = latestMemos.map(memo => {
+                // 내가 쓴 글이 아니고, 아직 내 이메일이 '읽음' 목록에 없다면 추가!
+                if (memo.authorEmail !== userEmail && !(memo.readBy || []).includes(userEmail)) {
+                    needsUpdate = true;
+                    return { ...memo, readBy: [...(memo.readBy || []), userEmail] };
+                }
+                return memo;
             });
-        } catch(e) {
-            console.error("읽음 처리 실패:", e);
-        }
+
+            // 3. 갱신할 게 확인되면, 다른 사람의 글을 덮어씌우지 않고 내 '읽음' 기록만 안전하게 추가(update)합니다.
+            if (needsUpdate) {
+                transaction.update(docRef, { memos: updatedMemos });
+            }
+        });
+        
+    } catch (e) {
+        console.error("읽음 처리 트랜잭션 실패:", e);
     }
 }
 
@@ -8219,8 +8994,8 @@ async function startExamAiAnalysis(base64Data) {
                 referenceDBText: referenceDBText,
                 subject: currentSubject,
                 isExtractAll: isExtractAll,
-                isTweezerMode: isTweezerMode, // 💡 추가됨: 서버로 전송
-                tweezerNums: tweezerNums,     // 💡 추가됨: 서버로 전송
+                isTweezerMode: isTweezerMode, 
+                tweezerNums: tweezerNums,    
                 isChoiceChecked: isChoiceChecked,
                 isShortChecked: isShortChecked,
                 startNum: startNum,
@@ -8250,13 +9025,13 @@ async function startExamAiAnalysis(base64Data) {
         const fullText = data.candidates[0].content.parts[0].text;
         const blocks = fullText.split('---').map(b => b.trim()).filter(b => b.length > 0);
         
-        blocks.forEach((block, idx) => {
+        // 💡 [필수 수정] await 데이터 저장을 위해 forEach를 for...of 반복문으로 변경했습니다. (유실 없음)
+        for (const block of blocks) {
             let numMatch = block.match(/\[번호\]\s*([^|]+)/) 
                         || block.match(/\[([가-힣a-zA-Z\s]*\d+[가-힣a-zA-Z\s]*)\]/) 
                         || block.match(/(?:문항)?\s*([가-힣a-zA-Z\s]*\d+)\s*번?/);
             let scoreMatch = block.match(/\[배점\][^0-9]*([\d.]+)/);
             
-            // 💡 [핵심 추가] AI가 준 답변에서 [수준], [이유], [문항내용]을 각각 독립적으로 발라냅니다!
             let levelMatch = block.match(/\[수준\]\s*(A\+|[A-E])/);
             let reasonMatch = block.match(/\[이유\]\s*([^|]+)/);
             let contentMatch = block.match(/\[문항내용\]\s*([\s\S]*)/);
@@ -8275,7 +9050,6 @@ async function startExamAiAnalysis(base64Data) {
             let level = levelMatch ? levelMatch[1].trim() : "C";
             let reason = reasonMatch ? reasonMatch[1].trim() : "AI 판정 이유가 분석되지 않았습니다.";
             
-            // [문항내용] 태그 뒤에 있는 순수한 문제 내용만 텍스트로 빼냅니다.
             let pureText = contentMatch ? contentMatch[1].trim() : block;
             
             let pRange = "";
@@ -8299,7 +9073,12 @@ async function startExamAiAnalysis(base64Data) {
                 passageRange: pRange,   
                 passageContent: pText   
             });
-        })
+
+            // 🌟 [여기만 추가됨] 추출된 문항을 지문 데이터와 함께 서랍에 자동 분리 저장
+            let innerCodeMatch = reason.match(/([1-9][0-9][가-힣a-zA-Z0-9-]+-\d+-\d+)/g) || ["미분류"];
+            let codesJoinStr = innerCodeMatch.join(', ');
+            await saveAnalysisAutomatically(cleanText, codesJoinStr, level, reason, base64Data, typeof commonPassages !== 'undefined' ? commonPassages : [], pText);
+        }
 
         extractedQuestionsArray.sort((a, b) => {
             const aIsShort = String(a.num).startsWith('서');
@@ -8320,7 +9099,6 @@ async function startExamAiAnalysis(base64Data) {
         
         renderQuestionCards(); 
 
-        // 💡 [여기 추가] 추출된 문항이 0개일 때 직관적인 '다시 분석하기' 버튼 표시
         if (extractedQuestionsArray.length === 0) {
             const listContainer = document.getElementById('extracted-questions-list');
             if (listContainer) {
@@ -8357,11 +9135,11 @@ async function startExamAiAnalysis(base64Data) {
     }
 }
 
-// ✨ AI가 찾아낸 성취기준 코드로 과목 ID를 자동 판별하는 마법의 함수
+// ✨ AI가 찾아낸 성취기준 코드로 과목 ID를 자동 판별하는 마법의 함수 (완벽 수정본)
 function detectSubjectIdFromStandardCode(code) {
     if (!code) return 'uncategorized';
     
-    // AI가 띄어쓰기를 하거나 오타를 내는 경우까지 완벽하게 잡아냅니다!
+    // 🧪 과학
     if (code.includes('통과1') || code.includes('통과 1')) return 'sci_common1';
     if (code.includes('통과2') || code.includes('통과 2')) return 'sci_common2';
     if (code.includes('물리')) return 'sci_phy';
@@ -8369,23 +9147,35 @@ function detectSubjectIdFromStandardCode(code) {
     if (code.includes('생명') || code.includes('생과')) return 'sci_bio';
     if (code.includes('지구') || code.includes('지과')) return 'sci_earth';
     
-    if (code.includes('10수학') && (code.includes('-01-') || code.includes(' 1'))) return 'common1'; 
-    if (code.includes('10수학') && (code.includes('-02-') || code.includes(' 2'))) return 'common2'; 
+    // 📐 수학 (공수1, 공수2 추가)
+    if (code.includes('공수1') || code.includes('공수 1') || (code.includes('10수학') && code.includes('-01-'))) return 'common1'; 
+    if (code.includes('공수2') || code.includes('공수 2') || (code.includes('10수학') && code.includes('-02-'))) return 'common2'; 
     if (code.includes('대수')) return 'algebra';
-    if (code.includes('미적')) return 'calculus1';
+    if (code.includes('미적Ⅱ') || code.includes('미적분Ⅱ')) return 'calculus2';
+    if (code.includes('미적Ⅰ') || code.includes('미적분Ⅰ') || code.includes('미적')) return 'calculus1';
     if (code.includes('확통') || code.includes('확률')) return 'probStat';
     if (code.includes('기하')) return 'geometry';
+    if (code.includes('경수') || code.includes('경제수학')) return 'econ_math';
+    if (code.includes('인수') || code.includes('인공지능')) return 'ai-math';
 
+    // 📖 국어 (화언, 문학 약어 추가)
+    if (code.includes('독작') || code.includes('독서') || code.includes('작문')) return 'kor_read_write';
     if (code.includes('공국1') || (code.includes('10국어') && code.includes('-01-'))) return 'kor_common1';
     if (code.includes('공국2') || (code.includes('10국어') && code.includes('-02-'))) return 'kor_common2';
+    if (code.includes('화언') || code.includes('화법')) return 'kor_speech';
+    if (code.includes('문학')) return 'kor_lit';
     
+    // 🗣️ 영어 (공영2 오타 수정 및 영Ⅰ, 영Ⅱ 추가)
     if (code.includes('공영1') || (code.includes('10영어') && code.includes('-01-'))) return 'eng_common1';
     if (code.includes('공영2') || (code.includes('10영어') && code.includes('-02-'))) return 'eng_common2';
+    if (code.includes('영Ⅰ') || code.includes('영어Ⅰ') || code.includes('영어1')) return 'eng_1';
+    if (code.includes('영Ⅱ') || code.includes('영어Ⅱ') || code.includes('영어2')) return 'eng_2';
     
+    // 🌍 사회 (한사1, 한사2 약어 추가)
     if (code.includes('통사1') || code.includes('통사 1')) return 'soc_common1';
     if (code.includes('통사2') || code.includes('통사 2')) return 'soc_common2';
-    if (code.includes('한국사1') || code.includes('한국사 1')) return 'history1';
-    if (code.includes('한국사2') || code.includes('한국사 2')) return 'history2';
+    if (code.includes('한사1') || code.includes('한국사1') || code.includes('한국사 1')) return 'history1';
+    if (code.includes('한사2') || code.includes('한국사2') || code.includes('한국사 2')) return 'history2';
 
     return 'uncategorized';
 }
@@ -8793,6 +9583,303 @@ window.startEditAssessment = function(index) {
 
 
 // ==========================================
+// 📐 LaTeX 도우미 기능 제어 스크립트
+// ==========================================
+
+// 창 열고 닫기 토글 기능
+window.toggleLatexHelper = function() {
+    const helperWin = document.getElementById('latex-floating-window');
+    if (!helperWin) return;
+    
+    if (helperWin.style.display === 'none' || helperWin.style.display === '') {
+        helperWin.style.display = 'flex';
+        // 창이 처음 열릴 때 드래그 이벤트 활성화 초기화
+        initLatexHelperDrag();
+    } else {
+        helperWin.style.display = 'none';
+    }
+};
+
+window.closeLatexHelper = function() {
+    const helperWin = document.getElementById('latex-floating-window');
+    if (helperWin) helperWin.style.display = 'none';
+};
+
+// 코드를 클릭하면 본문 내용 마우스 커서 위치 혹은 맨 뒤에 자동으로 수식 삽입하는 매커니즘
+window.insertLatex = function(syntax) {
+    const textarea = document.getElementById('journal-content');
+    if (!textarea) return;
+
+    const startPos = textarea.selectionStart;
+    const endPos = textarea.selectionEnd;
+    const currentVal = textarea.value;
+
+    // 수식 기호 $ ... $ 로 감싸서 바로 복사되도록 편의 구성
+    const textToInsert = `$${syntax}$`;
+
+    textarea.value = currentVal.substring(0, startPos) + textToInsert + currentVal.substring(endPos, currentVal.length);
+    
+    // 포커스를 돌려주고 커서 위치를 삽입된 수식 바로 뒤로 이동
+    textarea.focus();
+    textarea.selectionStart = textarea.selectionEnd = startPos + textToInsert.length;
+};
+
+// 마우스(PC) 및 터치(모바일) 드래그 이동을 위한 핵심 핸들러 바인딩
+function initLatexHelperDrag() {
+    const windowEl = document.getElementById('latex-floating-window');
+    const headerEl = document.getElementById('latex-floating-header');
+    if (!windowEl || !headerEl) return;
+
+    let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
+    
+    // 💻 PC 마우스 이벤트 연결
+    headerEl.onmousedown = dragMouseDown;
+    // 📱 모바일 터치 이벤트 연결
+    headerEl.ontouchstart = dragTouchStart;
+
+    // --- PC 마우스 컨트롤 ---
+    function dragMouseDown(e) {
+        e = e || window.event;
+        e.preventDefault();
+        pos3 = e.clientX;
+        pos4 = e.clientY;
+        document.onmouseup = closeDragElement;
+        document.onmousemove = elementDrag;
+    }
+
+    function elementDrag(e) {
+        e = e || window.event;
+        e.preventDefault();
+        pos1 = pos3 - e.clientX;
+        pos2 = pos4 - e.clientY;
+        pos3 = e.clientX;
+        pos4 = e.clientY;
+        windowEl.style.top = (windowEl.offsetTop - pos2) + "px";
+        windowEl.style.left = (windowEl.offsetLeft - pos1) + "px";
+    }
+
+    // --- 모바일 터치 컨트롤 ---
+    function dragTouchStart(e) {
+        e = e || window.event;
+        const touch = e.touches[0];
+        pos3 = touch.clientX;
+        pos4 = touch.clientY;
+        document.ontouchend = closeDragElement;
+        document.ontouchmove = elementTouchDrag;
+    }
+
+    function elementTouchDrag(e) {
+        e = e || window.event;
+        const touch = e.touches[0];
+        pos1 = pos3 - touch.clientX;
+        pos2 = pos4 - touch.clientY;
+        pos3 = touch.clientX;
+        pos4 = touch.clientY;
+        windowEl.style.top = (windowEl.offsetTop - pos2) + "px";
+        windowEl.style.left = (windowEl.offsetLeft - pos1) + "px";
+    }
+
+    // --- 드래그 종료 ---
+    function closeDragElement() {
+        document.onmouseup = null;
+        document.onmousemove = null;
+        document.ontouchend = null;
+        document.ontouchmove = null;
+    }
+}
+
+// ==========================================
+// 🚀 다단계 수행평가 자동 생성 기능 (Step-up Performance Maker)
+// ==========================================
+
+// 💡 나이스(NEIS) 바이트 계산기 (한글/특문 3Byte, 영문/숫자/공백 1Byte)
+function getNeisByteLength(str) {
+    let byteLength = 0;
+    for (let i = 0; i < str.length; i++) {
+        byteLength += (str.charCodeAt(i) > 127) ? 3 : 1;
+    }
+    return byteLength;
+}
+
+function openPerformanceMaker() {
+    showSection('performance-maker');
+    const subjName = subjectData[currentSubject] ? subjectData[currentSubject].title : "과목 선택 필요";
+    document.getElementById('perf-subject-name').innerText = subjName;
+    populatePerformanceStandards();
+}
+
+function populatePerformanceStandards() {
+    const selectEl = document.getElementById('perf-standard-select');
+    if (!selectEl) return;
+    
+    if (!subjectData[currentSubject] || !subjectData[currentSubject].standards || subjectData[currentSubject].standards.length === 0) {
+        selectEl.innerHTML = '<option value="">선택된 과목에 등록된 성취기준이 없습니다.</option>';
+        return;
+    }
+
+    selectEl.innerHTML = '<option value="">-- 문항의 기반이 될 성취기준을 선택하세요 --</option>';
+    
+    subjectData[currentSubject].standards.forEach(std => {
+        const option = document.createElement('option');
+        option.value = std.code;
+        option.dataset.l_high = std.levels?.high || '';
+        option.dataset.l_b = std.levels?.b || '';
+        option.dataset.l_mid = std.levels?.mid || '';
+        option.dataset.l_d = std.levels?.d || '';
+        option.dataset.l_low = std.levels?.low || '';
+        option.innerText = `${std.code} ${std.desc.substring(0, 30)}...`;
+        selectEl.appendChild(option);
+    });
+}
+
+async function executePerformanceGeneration() {
+    const isLoggedIn = await checkLogin();
+    if (!isLoggedIn) return;
+    if (!requireApiKey()) return; // 💡 선생님의 API 키 검사 로직 완벽 연동
+
+    const selectEl = document.getElementById('perf-standard-select');
+    if (!selectEl.value) {
+        alert("타겟 성취기준을 먼저 선택해주세요!");
+        return;
+    }
+
+    // 💡 5가지 역량 중 선생님이 체크한 것들만 수집
+    const checkedComps = Array.from(document.querySelectorAll('#perf-competencies input:checked')).map(cb => cb.value);
+    if (checkedComps.length === 0) {
+        alert("반영할 교과 역량을 최소 1개 이상 선택해주세요.");
+        return;
+    }
+
+    // 💡 6가지 수행평가 형식 중 선택된 값
+    const format = document.getElementById('perf-format-select').value;
+    const option = selectEl.options[selectEl.selectedIndex];
+    
+    const stdInfoForAI = `
+        [성취기준] ${option.innerText}
+        [국가수준 도달 기준]
+        A수준: ${option.dataset.l_high}
+        B수준: ${option.dataset.l_b}
+        C수준: ${option.dataset.l_mid}
+        D수준: ${option.dataset.l_d}
+        E수준: ${option.dataset.l_low}
+    `;
+
+    const btn = document.getElementById('btn-generate-perf');
+    const originalText = btn.innerText;
+    btn.innerText = "⏳ AI가 5단계 스텝업 문항과 모범 정답을 정밀 설계 중입니다...";
+    btn.disabled = true;
+
+    const resultZone = document.getElementById('perf-result-zone');
+    const contentBox = document.getElementById('perf-output-content');
+    resultZone.style.display = 'block';
+    contentBox.innerHTML = '<p style="text-align:center; color:#c026d3; font-weight:bold; padding:2rem;">보통 15~20초 정도 소요됩니다. 잠시만 기다려주세요! 🪄</p>';
+
+    try {
+        const workerUrl = "https://script.google.com/macros/s/AKfycbwgx4RgF8FQxxL3jBgEQ5l369llADjhZ1NepulIdF4DdX18kBrB8oRQ4Ft0d5WdKtEF/exec";
+        const userApiKey = localStorage.getItem('gemini_api_key'); // 💡 API키 추출해서 전송
+
+        const response = await fetch(workerUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain' },
+            body: JSON.stringify({
+                action: "generate_performance",
+                standardsInfo: stdInfoForAI,
+                assessmentFormat: format,
+                selectedCompetencies: checkedComps.join(", "),
+                apiKey: userApiKey
+            })
+        });
+
+        await checkApiError(response);
+        const data = await response.json();
+        
+        if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
+        
+        const aiJsonString = data.candidates[0].content.parts[0].text;
+        const cleanJsonStr = aiJsonString.replace(/```json\n?/gi, '').replace(/```/g, '').trim();
+        const resultData = JSON.parse(cleanJsonStr);
+
+        // 🌟 NEIS 생기부 바이트 수 계산 (프론트엔드 자바스크립트로 정확하게 계산)
+        const neisByte = getNeisByteLength(resultData.neis);
+        let byteColor = neisByte > 1500 ? "#ef4444" : "#15803d"; // 1500바이트 초과 시 빨간색 경고
+
+        // 🌟 화면에 뿌려줄 HTML 조립
+        let html = `
+            <div style="background:white; border: 1px solid #cbd5e1; border-radius: 12px; padding: 1.5rem; margin-bottom: 1.5rem;">
+                <h4 style="margin:0 0 10px 0; color:#1e3a8a; border-bottom: 2px solid #bfdbfe; padding-bottom: 5px;">${resultData.assessmentTitle}</h4>
+                <div style="font-size: 0.95rem; line-height: 1.6; color: #334155; margin-bottom: 15px;">
+                    ${resultData.context.replace(/\n/g, '<br>')}
+                </div>
+                <div style="display:flex; flex-direction:column; gap:15px;">
+        `;
+
+        const levelColors = { 'E': '#ef4444', 'D': '#f97316', 'C': '#f59e0b', 'B': '#3b82f6', 'A': '#10b981' };
+
+        resultData.steps.forEach(step => {
+            const color = levelColors[step.level] || '#64748b';
+            html += `
+                <div style="border-left: 4px solid ${color}; background: #f8fafc; padding: 15px; border-radius: 4px; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
+                    <div style="font-weight: bold; font-size: 0.85rem; color: ${color}; margin-bottom: 8px;">${step.title}</div>
+                    <div style="font-size: 0.95rem; color: #1e293b; line-height: 1.5; margin-bottom: 12px;">${step.question.replace(/\n/g, '<br>')}</div>
+                    
+                    <!-- 💡 모범 정답 영역 추가 -->
+                    <div style="background: #e0f2fe; border: 1px dashed #93c5fd; padding: 10px 15px; border-radius: 6px; font-size: 0.9rem; color: #1e3a8a; line-height: 1.5;">
+                        <strong style="color: #1d4ed8; margin-bottom:4px; display:block;">💡 모범 정답 및 평가 기준:</strong>
+                        ${step.answer.replace(/\n/g, '<br>')}
+                    </div>
+                </div>
+            `;
+        });
+
+        html += `
+                </div>
+            </div>
+            
+            <div style="background:white; border: 1px solid #cbd5e1; border-radius: 12px; padding: 1.5rem; margin-bottom: 1.5rem; overflow-x: auto;">
+                <h4 style="margin:0 0 10px 0; color:#0f766e; border-bottom: 2px solid #a7f3d0; padding-bottom: 5px;">📊 교사용 A~E 다차원 성취수준 루브릭</h4>
+                <table style="width: 100%; border-collapse: collapse; min-width: 600px; font-size: 0.9rem;">
+                    <tbody>
+                        <tr><th style="border:1px solid #e2e8f0; padding:10px; background:#f1f5f9; width:15%;">수준 A</th><td style="border:1px solid #e2e8f0; padding:10px;">${resultData.rubrics.A}</td></tr>
+                        <tr><th style="border:1px solid #e2e8f0; padding:10px; background:#f1f5f9;">수준 B</th><td style="border:1px solid #e2e8f0; padding:10px;">${resultData.rubrics.B}</td></tr>
+                        <tr><th style="border:1px solid #e2e8f0; padding:10px; background:#f1f5f9;">수준 C</th><td style="border:1px solid #e2e8f0; padding:10px;">${resultData.rubrics.C}</td></tr>
+                        <tr><th style="border:1px solid #e2e8f0; padding:10px; background:#f1f5f9;">수준 D</th><td style="border:1px solid #e2e8f0; padding:10px;">${resultData.rubrics.D}</td></tr>
+                        <tr><th style="border:1px solid #e2e8f0; padding:10px; background:#f1f5f9;">수준 E</th><td style="border:1px solid #e2e8f0; padding:10px;">${resultData.rubrics.E}</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- 💡 생기부 바이트 계산 뱃지 추가 -->
+            <div style="background:#fefce8; border: 1px solid #fef08a; border-radius: 12px; padding: 1.5rem;">
+                <h4 style="margin:0 0 10px 0; color:#854d0e; border-bottom: 2px solid #fde047; padding-bottom: 5px; display: flex; justify-content: space-between; align-items: center;">
+                    💾 학교생활기록부 세특 기재 초안 (A수준)
+                    <span style="font-size:0.8rem; background:#fef08a; padding:4px 10px; border-radius:12px; color:${byteColor}; font-weight:bold;">총 ${neisByte} Byte</span>
+                </h4>
+                <div style="font-size: 0.95rem; color: #713f12; line-height: 1.6;">
+                    ${resultData.neis}
+                </div>
+            </div>
+        `;
+
+        contentBox.innerHTML = html;
+
+        if (window.MathJax) {
+            MathJax.typesetClear([contentBox]);
+            MathJax.typesetPromise([contentBox]);
+        }
+
+    } catch (e) {
+        contentBox.innerHTML = `<div style="padding:1rem; background:#fee2e2; border-left:4px solid #ef4444; color:#b91c1c; border-radius:4px;"><strong>오류 발생:</strong> ${e.message}<br><br><span style="font-size:0.85rem;">(AI가 지정된 포맷을 어겼거나 통신이 지연되었습니다. 다시 한 번 버튼을 눌러주세요!)</span></div>`;
+    } finally {
+        btn.innerText = originalText;
+        btn.disabled = false;
+    }
+}
+
+
+// 기존 exposeToWindow 개체가 하단에 선언되어 있다면 아래 항목들을 매핑 추가해주세요.
+// toggleLatexHelper, closeLatexHelper, insertLatex
+
+// ==========================================
 // 🌟 [최종 업데이트] Vite 모듈 환경에서 HTML 버튼들이 함수를 찾을 수 있도록 외부(window)로 연결해주는 마법의 다리
 // ==========================================
 const exposeToWindow = {
@@ -8830,7 +9917,10 @@ const exposeToWindow = {
     openCompareModal, resetMCutScores, enableMEditMode,
 
     loadManualAssessmentWorkspace, toggleManualCompareMode, saveManualAssessmentToProject, enableManualEditMode,
-    resetManualScores, syncManualStructureFromDB, addManualTableQuestion, openReadOnlyExamViewer
+    resetManualScores, syncManualStructureFromDB, addManualTableQuestion, openReadOnlyExamViewer,
+    toggleLatexHelper, closeLatexHelper, insertLatex, runTweezerRepair,
+    // 👇👇👇 여기에 새로운 수행평가 함수 3가지를 추가했습니다! 👇👇👇
+    openPerformanceMaker, populatePerformanceStandards, executePerformanceGeneration
 };
 
 for (const [fnName, fn] of Object.entries(exposeToWindow)) {

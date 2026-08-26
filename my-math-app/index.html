@@ -64,6 +64,7 @@
         <button class="tab-btn" onclick="openAnalysisMode('single')" style="color: #2563eb; font-weight: bold;">🔍 한 문제 상세분석</button>
         <button class="tab-btn" onclick="openAnalysisMode('multi')" style="color: #8b5cf6; font-weight: bold;">📑 여러 문제 요약분석</button>
         <button class="tab-btn" onclick="showSection('bookmark')" style="color: #10b981; font-weight: bold;">🔖 북마크 문항 보기</button>
+        <button class="tab-btn" onclick="openPerformanceMaker()" style="color: #d946ef; font-weight: bold;">📝 AI 수행평가 생성</button>
         <button class="tab-btn" onclick="showSection('cut-score')" style="color: #ea580c; font-weight: bold;">📊 분할점수 산출</button>
     </div>
 
@@ -135,6 +136,55 @@
         </div>
 
 </div> 
+<!-- 👇 다단계(Step-up) 수행평가 생성기 화면 👇 -->
+    <div id="performance-maker" class="section">
+        <h2>📝 맞춤형 다단계 수행평가 자동 생성</h2>
+        <div class="quiz-container">
+            <div style="background: #fdf4ff; padding: 1rem; border-radius: 8px; border-left: 4px solid #d946ef; margin-bottom: 1.5rem;">
+                <p style="margin: 0; font-size: 0.9rem; color: #86198f;">
+                    현재 선택된 과목(<strong><span id="perf-subject-name"></span></strong>)의 성취기준을 바탕으로 A~E 수준을 변별할 수 있는 5단계 스텝업 수행평가를 AI가 자동 설계합니다.
+                </p>
+            </div>
+            
+            <div class="admin-form-group">
+                <label style="font-weight:bold; color:var(--primary);">1. 타겟 성취기준 선택</label>
+                <select id="perf-standard-select" class="option-btn" style="text-align: left; padding: 0.8rem; margin-top: 5px;">
+                    <option value="">과목을 변경하거나 데이터를 불러와 주세요</option>
+                </select>
+            </div>
+
+            <div class="admin-form-group" style="margin-top: 1.5rem;">
+                <label style="font-weight:bold; color:var(--primary);">2. 반영할 교과 역량 (복수 선택 가능)</label>
+                <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-top: 8px;" id="perf-competencies">
+                    <label style="cursor: pointer; background: #f1f5f9; padding: 8px 12px; border-radius: 6px; border: 1px solid #cbd5e1; font-size: 0.9rem;"><input type="checkbox" value="문제해결" checked> 문제해결</label>
+                    <label style="cursor: pointer; background: #f1f5f9; padding: 8px 12px; border-radius: 6px; border: 1px solid #cbd5e1; font-size: 0.9rem;"><input type="checkbox" value="추론"> 추론</label>
+                    <label style="cursor: pointer; background: #f1f5f9; padding: 8px 12px; border-radius: 6px; border: 1px solid #cbd5e1; font-size: 0.9rem;"><input type="checkbox" value="의사소통" checked> 의사소통</label>
+                    <label style="cursor: pointer; background: #f1f5f9; padding: 8px 12px; border-radius: 6px; border: 1px solid #cbd5e1; font-size: 0.9rem;"><input type="checkbox" value="연결"> 연결</label>
+                    <label style="cursor: pointer; background: #f1f5f9; padding: 8px 12px; border-radius: 6px; border: 1px solid #cbd5e1; font-size: 0.9rem;"><input type="checkbox" value="정보처리"> 정보처리</label>
+                </div>
+            </div>
+
+            <div class="admin-form-group" style="margin-top: 1.5rem;">
+                <label style="font-weight:bold; color:var(--primary);">3. 평가 형식 (수행평가 종류)</label>
+                <select id="perf-format-select" class="option-btn" style="text-align: left; padding: 0.8rem; margin-top: 5px;">
+                    <option value="단계적 서술형 평가 (절차 및 논리 전개형)">단계적 서술형 평가 (수식 계산 및 논리 전개형)</option>
+                    <option value="오류 분석 및 수학적 논증 (증명형)">오류 분석 및 수학적 논증 (오류 찾기, 반례, 증명형)</option>
+                    <option value="수학적 모델링 (실생활 문제 해결형)">수학적 모델링 (실생활 맥락 기반 최적해 찾기)</option>
+                    <option value="학생 주도 문항 출제 (문제 및 해설 제작형)">학생 주도 문항 출제 (문제 만들기 및 해설 제작형)</option>
+                    <option value="공학도구 활용 탐구 (알지오매스/데스모스)">공학도구 활용 탐구 (알지오매스/데스모스 활용 시각화)</option>
+                    <option value="수학적 글쓰기 및 개념 구조화 (보고서/마인드맵)">수학적 글쓰기 및 개념 구조화 (보고서, 인포그래픽, 마인드맵)</option>
+                </select>
+            </div>
+
+            <button id="btn-generate-perf" class="save-btn" onclick="executePerformanceGeneration()" style="background: #d946ef; margin-top: 2rem; font-size: 1.1rem; padding: 15px;">🚀 다단계 수행평가 AI 자동 생성</button>
+
+            <!-- 렌더링 결과 화면 구역 -->
+            <div id="perf-result-zone" style="display: none; margin-top: 3rem; border-top: 2px dashed #e2e8f0; padding-top: 2rem;">
+                <h3 style="color: #c026d3; margin-bottom: 1.5rem;">✨ 생성된 수행평가 자료</h3>
+                <div id="perf-output-content"></div>
+            </div>
+        </div>
+    </div>
 <div id="cut-score" class="section">
     <h2>📊 성취평가제 분할점수 산출 (AI 마법사)</h2>
     
@@ -1044,5 +1094,11 @@
             </div>
     </div>
 </div>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+<script>
+  // Mermaid 초기화
+  mermaid.initialize({ startOnLoad: false, theme: 'default' });
+</script>
 
 </body>

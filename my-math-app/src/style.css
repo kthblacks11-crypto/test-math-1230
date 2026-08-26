@@ -452,3 +452,136 @@ header {
 .delete-image-btn:hover {
     background-color: #dc2626;
 }
+
+
+/* 공중에 뜨는 독립 드래그 창 스타일 */
+.latex-drg-window {
+    position: fixed;
+    top: 100px;
+    left: calc(50% + 320px); /* 일지 작성 창 우측 옆에 배치되도록 설정 */
+    width: 420px;
+    max-height: 550px;
+    background: #ffffff;
+    border: 2px solid #cbd5e1;
+    border-radius: 10px;
+    box-shadow: 0 12px 35px rgba(0, 0, 0, 0.18);
+    z-index: 10050; /* 일반 모달보다 한 단계 높은 깊이 설정하여 가려짐 방지 */
+    display: none; /* 기본 상태는 숨김 */
+    flex-direction: column;
+    overflow: hidden;
+    font-family: inherit;
+}
+
+/* 마우스로 잡고 옮기는 상단 헤더 영역 */
+.latex-drg-header {
+    padding: 12px 16px;
+    background: #1e3a8a; /* Lee Sun-sin 하이 스쿨 테마색 연동 */
+    color: #ffffff;
+    font-weight: bold;
+    font-size: 0.9rem;
+    cursor: move; /* 드래그 가능 아이콘 명시 */
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    user-select: none;
+}
+
+.latex-drg-close {
+    background: none;
+    border: none;
+    color: #ffffff;
+    font-size: 1.5rem;
+    cursor: pointer;
+    line-height: 1;
+}
+.latex-drg-close:hover {
+    color: #f1f5f9;
+}
+
+/* 콘텐츠 영역 스크롤 기능 고정 */
+.latex-drg-body {
+    padding: 15px;
+    overflow-y: auto;
+    flex: 1;
+    background: #ffffff;
+}
+
+.latex-section-title {
+    font-size: 0.85rem;
+    font-weight: bold;
+    color: #1e40af;
+    margin: 15px 0 6px 0;
+    padding-left: 4px;
+    border-left: 3px solid #3b82f6;
+}
+
+/* 내부 데이터 테이블 인테리어 */
+.latex-drg-body table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 5px;
+}
+.latex-drg-body th, .latex-drg-body td {
+    border: 1px solid #e2e8f0;
+    padding: 6px 10px;
+    font-size: 0.82rem;
+    text-align: left;
+}
+.latex-drg-body th {
+    background: #f8fafc;
+    color: #475569;
+}
+
+/* 문법 클릭 버튼형 코드 스타일 */
+.latex-drg-body code {
+    background-color: #f8f9fa;
+    padding: 2px 5px;
+    border-radius: 4px;
+    color: #b8336a;
+    font-family: Consolas, monospace;
+    font-size: 0.85rem;
+    border: 1px solid #e9ecef;
+    cursor: pointer;
+    display: inline-block;
+    transition: all 0.15s;
+}
+.latex-drg-body code:hover {
+    background-color: #fce7f3;
+    border-color: #fbcfe8;
+    transform: scale(1.02);
+}
+
+/* (선생님이 보여주신 기존 CSS 코드들은 이 위쪽에 그대로 있어야 합니다!) */
+
+/* ========================================== */
+/* 📱 모바일 환경을 위한 LaTeX 도우미 창 반응형 설정 */
+/* ========================================== */
+@media screen and (max-width: 768px) {
+    #latex-floating-window {
+        width: 90% !important; /* 모바일에서는 화면 너비의 90%만 차지하게 줄임 */
+        left: 5% !important;   /* 화면 중앙에 오도록 좌측 여백 5% 설정 */
+        top: 10vh !important;  /* 상단에서 조금만 띄움 */
+        max-height: 80vh !important; /* 창 높이도 모바일 화면에 맞춤 */
+    }
+    
+    .latex-drg-body table {
+        display: block;
+        overflow-x: auto; /* 표 내용이 길면 가로로 스크롤할 수 있게 만듦 */
+        white-space: nowrap; /* 모바일에서 표 안의 글씨가 억지로 줄바꿈되지 않게 함 */
+    }
+
+    .latex-drg-header {
+        font-size: 0.8rem !important; /* 모바일에서는 제목 글씨 크기 약간 축소 */
+        padding: 10px 12px !important;
+    }
+}
+
+/* 문항 및 해설 내부의 SVG 크기 0px 수렴 문제 해결 */
+.question-box svg,
+#level-question-text svg {
+    width: 100%;
+    max-width: 300px; /* 원본 뷰박스 크기에 맞춤 */
+    height: auto !important; /* 100%를 무시하고 비율에 맞춰 자동 설정 */
+    display: block;
+    margin: 10px auto; /* 상하 여백과 가운데 정렬 */
+}
