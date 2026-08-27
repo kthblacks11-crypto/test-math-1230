@@ -9692,7 +9692,6 @@ function initLatexHelperDrag() {
 // 🚀 다단계 수행평가 자동 생성 기능 (Step-up Performance Maker)
 // ==========================================
 
-// 💡 나이스(NEIS) 바이트 계산기 (한글/특문 3Byte, 영문/숫자/공백 1Byte)
 function getNeisByteLength(str) {
     let byteLength = 0;
     for (let i = 0; i < str.length; i++) {
@@ -9704,21 +9703,46 @@ function getNeisByteLength(str) {
 function openPerformanceMaker() {
     showSection('performance-maker');
     const subjName = subjectData[currentSubject] ? subjectData[currentSubject].title : "과목 선택 필요";
-    document.getElementById('perf-subject-name').innerText = subjName;
+    const subjNameEl = document.getElementById('perf-subject-name');
+    if(subjNameEl) subjNameEl.innerText = subjName;
     populatePerformanceStandards();
 }
 
+// 💡 1. 성취기준 목록 초기화 (첫 번째 드롭다운 세팅)
 function populatePerformanceStandards() {
-    const selectEl = document.getElementById('perf-standard-select');
-    if (!selectEl) return;
+    const container = document.getElementById('perf-standard-container');
+    if (!container) return;
     
-    if (!subjectData[currentSubject] || !subjectData[currentSubject].standards || subjectData[currentSubject].standards.length === 0) {
-        selectEl.innerHTML = '<option value="">선택된 과목에 등록된 성취기준이 없습니다.</option>';
-        return;
-    }
+    container.innerHTML = `
+        <div class="perf-standard-row" style="display: flex; gap: 10px; align-items: center;">
+            <select class="option-btn perf-standard-select" style="flex: 1; text-align: left; padding: 0.8rem; margin: 0;">
+                <option value="">-- 문항의 기반이 될 성취기준을 선택하세요 --</option>
+            </select>
+            <button class="save-btn" onclick="addPerfStandardSelect()" style="width: auto; margin: 0; padding: 0.8rem 1rem; background: #3b82f6;">➕ 추가</button>
+        </div>
+    `;
+    fillStandardOptions(container.querySelector('.perf-standard-select'));
+}
 
-    selectEl.innerHTML = '<option value="">-- 문항의 기반이 될 성취기준을 선택하세요 --</option>';
-    
+// 💡 2. 동적 추가 버튼 누를 때 새로운 드롭다운 생성
+function addPerfStandardSelect() {
+    const container = document.getElementById('perf-standard-container');
+    const row = document.createElement('div');
+    row.className = 'perf-standard-row';
+    row.style.cssText = 'display: flex; gap: 10px; align-items: center; margin-top: 10px;';
+    row.innerHTML = `
+        <select class="option-btn perf-standard-select" style="flex: 1; text-align: left; padding: 0.8rem; margin: 0;">
+            <option value="">-- 융합할 성취기준을 추가로 선택하세요 --</option>
+        </select>
+        <button class="save-btn" onclick="this.parentElement.remove()" style="width: auto; margin: 0; padding: 0.8rem 1rem; background: #ef4444;">❌ 삭제</button>
+    `;
+    container.appendChild(row);
+    fillStandardOptions(row.querySelector('.perf-standard-select'));
+}
+
+// 💡 3. 드롭다운 안에 해당 과목 성취기준 목록 채워넣기
+function fillStandardOptions(selectEl) {
+    if (!subjectData[currentSubject] || !subjectData[currentSubject].standards) return;
     subjectData[currentSubject].standards.forEach(std => {
         const option = document.createElement('option');
         option.value = std.code;
@@ -9732,14 +9756,27 @@ function populatePerformanceStandards() {
     });
 }
 
+// 💡 4. 메인 실행 엔진 (융합 성취기준 및 매트릭스 렌더링 적용)
 async function executePerformanceGeneration() {
     const isLoggedIn = await checkLogin();
     if (!isLoggedIn) return;
     if (!requireApiKey()) return;
 
-    const selectEl = document.getElementById('perf-standard-select');
-    if (!selectEl.value) {
-        alert("타겟 성취기준을 먼저 선택해주세요!");
+    // 선택된 성취기준들 수집
+    const selects = document.querySelectorAll('.perf-standard-select');
+    let stdInfoForAI = "";
+    let selectedCount = 0;
+
+    selects.forEach((sel, idx) => {
+        if (sel.value) {
+            const opt = sel.options[sel.selectedIndex];
+            stdInfoForAI += `[성취기준 ${idx + 1}] ${opt.innerText}\n(A수준: ${opt.dataset.l_high} / B수준: ${opt.dataset.l_b} / C수준: ${opt.dataset.l_mid} / D수준: ${opt.dataset.l_d} / E수준: ${opt.dataset.l_low})\n\n`;
+            selectedCount++;
+        }
+    });
+
+    if (selectedCount === 0) {
+        alert("최소 1개 이상의 성취기준을 선택해주세요!");
         return;
     }
 
@@ -9750,38 +9787,26 @@ async function executePerformanceGeneration() {
     }
 
     const format = document.getElementById('perf-format-select').value;
-    const option = selectEl.options[selectEl.selectedIndex];
-    
-    const stdInfoForAI = `
-        [성취기준] ${option.innerText}
-        [국가수준 도달 기준]
-        A수준: ${option.dataset.l_high}
-        B수준: ${option.dataset.l_b}
-        C수준: ${option.dataset.l_mid}
-        D수준: ${option.dataset.l_d}
-        E수준: ${option.dataset.l_low}
-    `;
 
     const btn = document.getElementById('btn-generate-perf');
     const originalText = btn.innerText;
-    btn.innerText = "⏳ AI가 5단계 스텝업 문항과 A~E 세특을 정밀 설계 중입니다...";
+    btn.innerText = "⏳ AI가 융합 문항과 다차원 매트릭스 루브릭을 설계 중입니다...";
     btn.disabled = true;
 
     const resultZone = document.getElementById('perf-result-zone');
     const contentBox = document.getElementById('perf-output-content');
     resultZone.style.display = 'block';
-    contentBox.innerHTML = '<p style="text-align:center; color:#c026d3; font-weight:bold; padding:2rem;">보통 20~30초 정도 소요됩니다. 완벽한 구성을 위해 잠시만 기다려주세요! 🪄</p>';
+    contentBox.innerHTML = '<p style="text-align:center; color:#c026d3; font-weight:bold; padding:2rem;">성취기준 융합 및 매트릭스 루브릭 설계로 인해 최대 30초가 소요될 수 있습니다. 🪄</p>';
 
     try {
         const workerUrl = "https://script.google.com/macros/s/AKfycbwgx4RgF8FQxxL3jBgEQ5l369llADjhZ1NepulIdF4DdX18kBrB8oRQ4Ft0d5WdKtEF/exec";
         const userApiKey = localStorage.getItem('gemini_api_key');
 
-        // 🌟 [수정됨] 백엔드의 [서랍 10] 전용 API 호출
         const response = await fetch(workerUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'text/plain' },
             body: JSON.stringify({
-                action: "generate_performance", 
+                action: "generate_performance",
                 standardsInfo: stdInfoForAI,
                 assessmentFormat: format,
                 selectedCompetencies: checkedComps.join(", "),
@@ -9791,7 +9816,6 @@ async function executePerformanceGeneration() {
 
         await checkApiError(response);
         const data = await response.json();
-        
         if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
         
         const aiJsonString = data.candidates[0].content.parts[0].text;
@@ -9800,7 +9824,7 @@ async function executePerformanceGeneration() {
 
         const levelColors = { 'E': '#ef4444', 'D': '#f97316', 'C': '#f59e0b', 'B': '#3b82f6', 'A': '#10b981' };
 
-        // 🌟 1. 학생용 평가지 (질문만 노출)
+        // 🌟 1. 학생용 평가지 (질문 먼저 노출)
         let studentHtml = `
             <div style="background:white; border: 1px solid #cbd5e1; border-top: 5px solid #d946ef; border-radius: 12px; padding: 2rem; margin-bottom: 2rem; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 2px solid #f1f5f9; padding-bottom: 10px;">
@@ -9811,32 +9835,30 @@ async function executePerformanceGeneration() {
                 <h4 style="margin:0 0 15px 0; color:#0f172a; text-align: center; font-size: 1.2rem;">${resultData.assessmentTitle}</h4>
                 
                 <div style="background: #f8fafc; padding: 15px; border-radius: 8px; font-size: 1rem; line-height: 1.7; color: #1e293b; margin-bottom: 20px; border: 1px dashed #cbd5e1;">
-                    <strong style="color:#0f172a;">[상황]</strong><br>
+                    <strong style="color:#0f172a;">[탐구 상황 및 과제]</strong><br>
                     ${resultData.context.replace(/\n/g, '<br>')}
                 </div>
-                
                 <div style="display:flex; flex-direction:column; gap:15px;">
         `;
 
         resultData.steps.forEach(step => {
             const color = levelColors[step.level] || '#64748b';
             studentHtml += `
-                <div style="padding: 10px 15px; border-bottom: 1px solid #e2e8f0;">
+                <div style="padding: 10px 15px; border-bottom: 1px dashed #e2e8f0;">
                     <div style="font-weight: bold; font-size: 0.9rem; color: ${color}; margin-bottom: 6px;">${step.title}</div>
                     <div style="font-size: 1rem; color: #0f172a; line-height: 1.6;">${step.question.replace(/\n/g, '<br>')}</div>
-                    <div style="margin-top: 10px; min-height: 80px; background: #fdfcfa; border: 1px dashed #e2e8f0; border-radius: 4px; padding: 10px; color: #cbd5e1; font-size: 0.8rem; text-align: center; display: flex; align-items: center; justify-content: center;">
-                        (학생 풀이 작성 공간)
+                    <div style="margin-top: 10px; min-height: 60px; background: #fdfcfa; border: 1px solid #e2e8f0; border-radius: 4px; padding: 10px; color: #cbd5e1; font-size: 0.8rem; text-align: center; display: flex; align-items: center; justify-content: center;">
+                        (학생 풀이 공간)
                     </div>
                 </div>
             `;
         });
         studentHtml += `</div></div>`;
 
-        // 🌟 2. 교사용 모범 정답 및 루브릭
+        // 🌟 2. 교사용 모범 정답
         let teacherHtml = `
             <div style="background:white; border: 1px solid #cbd5e1; border-top: 5px solid #1e3a8a; border-radius: 12px; padding: 2rem; margin-bottom: 2rem; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
-                <h3 style="margin:0 0 15px 0; color:#1e3a8a; border-bottom: 2px solid #f1f5f9; padding-bottom: 10px; font-size: 1.3rem;">👨‍🏫 교사용 채점 기준표 및 모범 정답</h3>
-                
+                <h3 style="margin:0 0 15px 0; color:#1e3a8a; border-bottom: 2px solid #f1f5f9; padding-bottom: 10px; font-size: 1.3rem;">👨‍🏫 교사용 해설 및 평가 루브릭</h3>
                 <h4 style="margin:0 0 10px 0; color:#0f766e;">💡 단계별 모범 정답</h4>
                 <div style="display:flex; flex-direction:column; gap:10px; margin-bottom: 25px;">
         `;
@@ -9851,32 +9873,49 @@ async function executePerformanceGeneration() {
             `;
         });
 
+        // 🌟 3. 매트릭스(표) 형태의 다차원 평가 루브릭 렌더링
         teacherHtml += `
                 </div>
-                <h4 style="margin:0 0 10px 0; color:#0f766e;">📊 A~E 성취수준 루브릭 (행동 관찰 지표)</h4>
+                <h4 style="margin:0 0 10px 0; color:#0f766e;">📊 평가 요소별 다차원 성취수준 루브릭</h4>
                 <div style="overflow-x: auto;">
-                    <table style="width: 100%; border-collapse: collapse; min-width: 600px; font-size: 0.95rem; text-align: left;">
+                    <table style="width: 100%; border-collapse: collapse; min-width: 800px; font-size: 0.85rem; text-align: left;">
+                        <thead style="background: #f1f5f9; color: #334155;">
+                            <tr>
+                                <th style="border:1px solid #cbd5e1; padding:10px; text-align:center; width: 15%;">평가 요소 ↓</th>
+                                <th style="border:1px solid #cbd5e1; padding:10px; text-align:center; color:#15803d;">수준 A</th>
+                                <th style="border:1px solid #cbd5e1; padding:10px; text-align:center; color:#1d4ed8;">수준 B</th>
+                                <th style="border:1px solid #cbd5e1; padding:10px; text-align:center; color:#b45309;">수준 C</th>
+                                <th style="border:1px solid #cbd5e1; padding:10px; text-align:center; color:#c2410c;">수준 D</th>
+                                <th style="border:1px solid #cbd5e1; padding:10px; text-align:center; color:#b91c1c;">수준 E</th>
+                            </tr>
+                        </thead>
                         <tbody>
-                            <tr><th style="border:1px solid #e2e8f0; padding:12px; background:#ecfdf5; width:12%; color:#15803d; text-align:center;">수준 A</th><td style="border:1px solid #e2e8f0; padding:12px;">${resultData.rubrics.A}</td></tr>
-                            <tr><th style="border:1px solid #e2e8f0; padding:12px; background:#eff6ff; color:#1d4ed8; text-align:center;">수준 B</th><td style="border:1px solid #e2e8f0; padding:12px;">${resultData.rubrics.B}</td></tr>
-                            <tr><th style="border:1px solid #e2e8f0; padding:12px; background:#fffbeb; color:#b45309; text-align:center;">수준 C</th><td style="border:1px solid #e2e8f0; padding:12px;">${resultData.rubrics.C}</td></tr>
-                            <tr><th style="border:1px solid #e2e8f0; padding:12px; background:#fff7ed; color:#c2410c; text-align:center;">수준 D</th><td style="border:1px solid #e2e8f0; padding:12px;">${resultData.rubrics.D}</td></tr>
-                            <tr><th style="border:1px solid #e2e8f0; padding:12px; background:#fef2f2; color:#b91c1c; text-align:center;">수준 E</th><td style="border:1px solid #e2e8f0; padding:12px;">${resultData.rubrics.E}</td></tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
         `;
 
-        // 🌟 3. A~E 생기부 세특 초안 및 바이트 계산기
+        resultData.rubric_matrix.forEach(row => {
+            teacherHtml += `
+                <tr>
+                    <th style="border:1px solid #cbd5e1; padding:10px; background: #f8fafc; text-align:center; word-break: keep-all; font-weight:bold; color:#1e40af;">${row.element}</th>
+                    <td style="border:1px solid #cbd5e1; padding:10px;">${row.A}</td>
+                    <td style="border:1px solid #cbd5e1; padding:10px;">${row.B}</td>
+                    <td style="border:1px solid #cbd5e1; padding:10px;">${row.C}</td>
+                    <td style="border:1px solid #cbd5e1; padding:10px;">${row.D}</td>
+                    <td style="border:1px solid #cbd5e1; padding:10px;">${row.E}</td>
+                </tr>
+            `;
+        });
+        teacherHtml += `</tbody></table></div></div>`;
+
+        // 🌟 4. A~E 생기부 세특 초안 및 바이트 계산기
         let neisHtml = `
             <div style="background:white; border: 1px solid #fef08a; border-top: 5px solid #eab308; border-radius: 12px; padding: 2rem; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
                 <h3 style="margin:0 0 15px 0; color:#854d0e; border-bottom: 2px solid #fefce8; padding-bottom: 10px; font-size: 1.3rem;">💾 수준별 학교생활기록부 세특 기재 초안</h3>
+                <div style="margin-bottom: 15px; font-size: 0.85rem; color: #a16207;">💡 성취 수준별로 학생의 역량, 참여도, <b>확장 및 발전 가능성</b>이 깊이 있게 포함되어 있습니다.</div>
                 <div style="display:flex; flex-direction:column; gap:15px;">
         `;
 
         ['A', 'B', 'C', 'D', 'E'].forEach(lvl => {
-            const neisText = resultData.neis[lvl] || "데이터가 생성되지 않았습니다.";
+            const neisText = resultData.neis[lvl] || "데이터 생성 오류";
             const neisByte = getNeisByteLength(neisText);
             const byteColor = neisByte > 1500 ? "#ef4444" : "#15803d";
             const lvlColor = levelColors[lvl];
@@ -9895,7 +9934,7 @@ async function executePerformanceGeneration() {
         });
         neisHtml += `</div></div>`;
 
-        // 🌟 최종 출력 조립
+        // 최종 출력 조립
         contentBox.innerHTML = studentHtml + teacherHtml + neisHtml;
 
         if (window.MathJax) {
@@ -9904,7 +9943,7 @@ async function executePerformanceGeneration() {
         }
 
     } catch (e) {
-        contentBox.innerHTML = `<div style="padding:1rem; background:#fee2e2; border-left:4px solid #ef4444; color:#b91c1c; border-radius:4px;"><strong>오류 발생:</strong> ${e.message}<br><br><span style="font-size:0.85rem;">(AI가 지정된 포맷을 어겼거나 통신이 지연되었습니다. 다시 한 번 버튼을 눌러주세요!)</span></div>`;
+        contentBox.innerHTML = `<div style="padding:1rem; background:#fee2e2; border-left:4px solid #ef4444; color:#b91c1c; border-radius:4px;"><strong>오류 발생:</strong> ${e.message}<br><br><span style="font-size:0.85rem;">(잠시 후 다시 버튼을 눌러주세요.)</span></div>`;
     } finally {
         btn.innerText = originalText;
         btn.disabled = false;
@@ -9956,7 +9995,7 @@ const exposeToWindow = {
     resetManualScores, syncManualStructureFromDB, addManualTableQuestion, openReadOnlyExamViewer,
     toggleLatexHelper, closeLatexHelper, insertLatex, runTweezerRepair,
     // 👇👇👇 여기에 새로운 수행평가 함수 3가지를 추가했습니다! 👇👇👇
-    openPerformanceMaker, populatePerformanceStandards, executePerformanceGeneration
+    openPerformanceMaker, populatePerformanceStandards, executePerformanceGeneration, addPerfStandardSelect
 };
 
 for (const [fnName, fn] of Object.entries(exposeToWindow)) {

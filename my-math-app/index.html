@@ -147,10 +147,16 @@
             </div>
             
             <div class="admin-form-group">
-                <label style="font-weight:bold; color:var(--primary);">1. 타겟 성취기준 선택</label>
-                <select id="perf-standard-select" class="option-btn" style="text-align: left; padding: 0.8rem; margin-top: 5px;">
-                    <option value="">과목을 변경하거나 데이터를 불러와 주세요</option>
-                </select>
+                <label style="font-weight:bold; color:var(--primary);">1. 타겟 성취기준 선택 (융합 가능)</label>
+                <div id="perf-standard-container" style="display: flex; flex-direction: column; gap: 10px; margin-top: 5px;">
+                    <!-- 💡 성취기준이 추가되는 컨테이너 -->
+                    <div class="perf-standard-row" style="display: flex; gap: 10px; align-items: center;">
+                        <select class="option-btn perf-standard-select" style="flex: 1; text-align: left; padding: 0.8rem; margin: 0;">
+                            <option value="">과목을 변경하거나 데이터를 불러와 주세요</option>
+                        </select>
+                        <button class="save-btn" onclick="addPerfStandardSelect()" style="width: auto; margin: 0; padding: 0.8rem 1rem; background: #3b82f6;">➕ 추가</button>
+                    </div>
+                </div>
             </div>
 
             <div class="admin-form-group" style="margin-top: 1.5rem;">
