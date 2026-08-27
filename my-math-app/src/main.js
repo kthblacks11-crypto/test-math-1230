@@ -9735,7 +9735,7 @@ function populatePerformanceStandards() {
 async function executePerformanceGeneration() {
     const isLoggedIn = await checkLogin();
     if (!isLoggedIn) return;
-    if (!requireApiKey()) return; // 💡 선생님의 API 키 검사 로직 완벽 연동
+    if (!requireApiKey()) return;
 
     const selectEl = document.getElementById('perf-standard-select');
     if (!selectEl.value) {
@@ -9743,14 +9743,12 @@ async function executePerformanceGeneration() {
         return;
     }
 
-    // 💡 5가지 역량 중 선생님이 체크한 것들만 수집
     const checkedComps = Array.from(document.querySelectorAll('#perf-competencies input:checked')).map(cb => cb.value);
     if (checkedComps.length === 0) {
         alert("반영할 교과 역량을 최소 1개 이상 선택해주세요.");
         return;
     }
 
-    // 💡 6가지 수행평가 형식 중 선택된 값
     const format = document.getElementById('perf-format-select').value;
     const option = selectEl.options[selectEl.selectedIndex];
     
@@ -9766,23 +9764,24 @@ async function executePerformanceGeneration() {
 
     const btn = document.getElementById('btn-generate-perf');
     const originalText = btn.innerText;
-    btn.innerText = "⏳ AI가 5단계 스텝업 문항과 모범 정답을 정밀 설계 중입니다...";
+    btn.innerText = "⏳ AI가 5단계 스텝업 문항과 A~E 세특을 정밀 설계 중입니다...";
     btn.disabled = true;
 
     const resultZone = document.getElementById('perf-result-zone');
     const contentBox = document.getElementById('perf-output-content');
     resultZone.style.display = 'block';
-    contentBox.innerHTML = '<p style="text-align:center; color:#c026d3; font-weight:bold; padding:2rem;">보통 15~20초 정도 소요됩니다. 잠시만 기다려주세요! 🪄</p>';
+    contentBox.innerHTML = '<p style="text-align:center; color:#c026d3; font-weight:bold; padding:2rem;">보통 20~30초 정도 소요됩니다. 완벽한 구성을 위해 잠시만 기다려주세요! 🪄</p>';
 
     try {
         const workerUrl = "https://script.google.com/macros/s/AKfycbwgx4RgF8FQxxL3jBgEQ5l369llADjhZ1NepulIdF4DdX18kBrB8oRQ4Ft0d5WdKtEF/exec";
-        const userApiKey = localStorage.getItem('gemini_api_key'); // 💡 API키 추출해서 전송
+        const userApiKey = localStorage.getItem('gemini_api_key');
 
+        // 🌟 [수정됨] 백엔드의 [서랍 10] 전용 API 호출
         const response = await fetch(workerUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'text/plain' },
             body: JSON.stringify({
-                action: "generate_performance",
+                action: "generate_performance", 
                 standardsInfo: stdInfoForAI,
                 assessmentFormat: format,
                 selectedCompetencies: checkedComps.join(", "),
@@ -9799,68 +9798,105 @@ async function executePerformanceGeneration() {
         const cleanJsonStr = aiJsonString.replace(/```json\n?/gi, '').replace(/```/g, '').trim();
         const resultData = JSON.parse(cleanJsonStr);
 
-        // 🌟 NEIS 생기부 바이트 수 계산 (프론트엔드 자바스크립트로 정확하게 계산)
-        const neisByte = getNeisByteLength(resultData.neis);
-        let byteColor = neisByte > 1500 ? "#ef4444" : "#15803d"; // 1500바이트 초과 시 빨간색 경고
+        const levelColors = { 'E': '#ef4444', 'D': '#f97316', 'C': '#f59e0b', 'B': '#3b82f6', 'A': '#10b981' };
 
-        // 🌟 화면에 뿌려줄 HTML 조립
-        let html = `
-            <div style="background:white; border: 1px solid #cbd5e1; border-radius: 12px; padding: 1.5rem; margin-bottom: 1.5rem;">
-                <h4 style="margin:0 0 10px 0; color:#1e3a8a; border-bottom: 2px solid #bfdbfe; padding-bottom: 5px;">${resultData.assessmentTitle}</h4>
-                <div style="font-size: 0.95rem; line-height: 1.6; color: #334155; margin-bottom: 15px;">
+        // 🌟 1. 학생용 평가지 (질문만 노출)
+        let studentHtml = `
+            <div style="background:white; border: 1px solid #cbd5e1; border-top: 5px solid #d946ef; border-radius: 12px; padding: 2rem; margin-bottom: 2rem; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 2px solid #f1f5f9; padding-bottom: 10px;">
+                    <h3 style="margin:0; color:#1e3a8a; font-size: 1.3rem;">🧑‍🎓 학생용 수행평가지</h3>
+                    <span style="background:#fdf4ff; color:#a21caf; padding:4px 10px; border-radius:20px; font-size:0.8rem; font-weight:bold;">${format.split(' ')[0]}</span>
+                </div>
+                
+                <h4 style="margin:0 0 15px 0; color:#0f172a; text-align: center; font-size: 1.2rem;">${resultData.assessmentTitle}</h4>
+                
+                <div style="background: #f8fafc; padding: 15px; border-radius: 8px; font-size: 1rem; line-height: 1.7; color: #1e293b; margin-bottom: 20px; border: 1px dashed #cbd5e1;">
+                    <strong style="color:#0f172a;">[상황]</strong><br>
                     ${resultData.context.replace(/\n/g, '<br>')}
                 </div>
+                
                 <div style="display:flex; flex-direction:column; gap:15px;">
         `;
 
-        const levelColors = { 'E': '#ef4444', 'D': '#f97316', 'C': '#f59e0b', 'B': '#3b82f6', 'A': '#10b981' };
-
         resultData.steps.forEach(step => {
             const color = levelColors[step.level] || '#64748b';
-            html += `
-                <div style="border-left: 4px solid ${color}; background: #f8fafc; padding: 15px; border-radius: 4px; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
-                    <div style="font-weight: bold; font-size: 0.85rem; color: ${color}; margin-bottom: 8px;">${step.title}</div>
-                    <div style="font-size: 0.95rem; color: #1e293b; line-height: 1.5; margin-bottom: 12px;">${step.question.replace(/\n/g, '<br>')}</div>
-                    
-                    <!-- 💡 모범 정답 영역 추가 -->
-                    <div style="background: #e0f2fe; border: 1px dashed #93c5fd; padding: 10px 15px; border-radius: 6px; font-size: 0.9rem; color: #1e3a8a; line-height: 1.5;">
-                        <strong style="color: #1d4ed8; margin-bottom:4px; display:block;">💡 모범 정답 및 평가 기준:</strong>
-                        ${step.answer.replace(/\n/g, '<br>')}
+            studentHtml += `
+                <div style="padding: 10px 15px; border-bottom: 1px solid #e2e8f0;">
+                    <div style="font-weight: bold; font-size: 0.9rem; color: ${color}; margin-bottom: 6px;">${step.title}</div>
+                    <div style="font-size: 1rem; color: #0f172a; line-height: 1.6;">${step.question.replace(/\n/g, '<br>')}</div>
+                    <div style="margin-top: 10px; min-height: 80px; background: #fdfcfa; border: 1px dashed #e2e8f0; border-radius: 4px; padding: 10px; color: #cbd5e1; font-size: 0.8rem; text-align: center; display: flex; align-items: center; justify-content: center;">
+                        (학생 풀이 작성 공간)
                     </div>
                 </div>
             `;
         });
+        studentHtml += `</div></div>`;
 
-        html += `
+        // 🌟 2. 교사용 모범 정답 및 루브릭
+        let teacherHtml = `
+            <div style="background:white; border: 1px solid #cbd5e1; border-top: 5px solid #1e3a8a; border-radius: 12px; padding: 2rem; margin-bottom: 2rem; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+                <h3 style="margin:0 0 15px 0; color:#1e3a8a; border-bottom: 2px solid #f1f5f9; padding-bottom: 10px; font-size: 1.3rem;">👨‍🏫 교사용 채점 기준표 및 모범 정답</h3>
+                
+                <h4 style="margin:0 0 10px 0; color:#0f766e;">💡 단계별 모범 정답</h4>
+                <div style="display:flex; flex-direction:column; gap:10px; margin-bottom: 25px;">
+        `;
+
+        resultData.steps.forEach(step => {
+            const color = levelColors[step.level] || '#64748b';
+            teacherHtml += `
+                <div style="background: #e0f2fe; border-left: 4px solid ${color}; padding: 12px 15px; border-radius: 4px;">
+                    <strong style="color: ${color}; font-size: 0.85rem;">[${step.title}]</strong>
+                    <div style="margin-top: 5px; font-size: 0.95rem; color: #1e3a8a; line-height: 1.6;">${step.answer.replace(/\n/g, '<br>')}</div>
                 </div>
-            </div>
-            
-            <div style="background:white; border: 1px solid #cbd5e1; border-radius: 12px; padding: 1.5rem; margin-bottom: 1.5rem; overflow-x: auto;">
-                <h4 style="margin:0 0 10px 0; color:#0f766e; border-bottom: 2px solid #a7f3d0; padding-bottom: 5px;">📊 교사용 A~E 다차원 성취수준 루브릭</h4>
-                <table style="width: 100%; border-collapse: collapse; min-width: 600px; font-size: 0.9rem;">
-                    <tbody>
-                        <tr><th style="border:1px solid #e2e8f0; padding:10px; background:#f1f5f9; width:15%;">수준 A</th><td style="border:1px solid #e2e8f0; padding:10px;">${resultData.rubrics.A}</td></tr>
-                        <tr><th style="border:1px solid #e2e8f0; padding:10px; background:#f1f5f9;">수준 B</th><td style="border:1px solid #e2e8f0; padding:10px;">${resultData.rubrics.B}</td></tr>
-                        <tr><th style="border:1px solid #e2e8f0; padding:10px; background:#f1f5f9;">수준 C</th><td style="border:1px solid #e2e8f0; padding:10px;">${resultData.rubrics.C}</td></tr>
-                        <tr><th style="border:1px solid #e2e8f0; padding:10px; background:#f1f5f9;">수준 D</th><td style="border:1px solid #e2e8f0; padding:10px;">${resultData.rubrics.D}</td></tr>
-                        <tr><th style="border:1px solid #e2e8f0; padding:10px; background:#f1f5f9;">수준 E</th><td style="border:1px solid #e2e8f0; padding:10px;">${resultData.rubrics.E}</td></tr>
-                    </tbody>
-                </table>
-            </div>
+            `;
+        });
 
-            <!-- 💡 생기부 바이트 계산 뱃지 추가 -->
-            <div style="background:#fefce8; border: 1px solid #fef08a; border-radius: 12px; padding: 1.5rem;">
-                <h4 style="margin:0 0 10px 0; color:#854d0e; border-bottom: 2px solid #fde047; padding-bottom: 5px; display: flex; justify-content: space-between; align-items: center;">
-                    💾 학교생활기록부 세특 기재 초안 (A수준)
-                    <span style="font-size:0.8rem; background:#fef08a; padding:4px 10px; border-radius:12px; color:${byteColor}; font-weight:bold;">총 ${neisByte} Byte</span>
-                </h4>
-                <div style="font-size: 0.95rem; color: #713f12; line-height: 1.6;">
-                    ${resultData.neis}
+        teacherHtml += `
+                </div>
+                <h4 style="margin:0 0 10px 0; color:#0f766e;">📊 A~E 성취수준 루브릭 (행동 관찰 지표)</h4>
+                <div style="overflow-x: auto;">
+                    <table style="width: 100%; border-collapse: collapse; min-width: 600px; font-size: 0.95rem; text-align: left;">
+                        <tbody>
+                            <tr><th style="border:1px solid #e2e8f0; padding:12px; background:#ecfdf5; width:12%; color:#15803d; text-align:center;">수준 A</th><td style="border:1px solid #e2e8f0; padding:12px;">${resultData.rubrics.A}</td></tr>
+                            <tr><th style="border:1px solid #e2e8f0; padding:12px; background:#eff6ff; color:#1d4ed8; text-align:center;">수준 B</th><td style="border:1px solid #e2e8f0; padding:12px;">${resultData.rubrics.B}</td></tr>
+                            <tr><th style="border:1px solid #e2e8f0; padding:12px; background:#fffbeb; color:#b45309; text-align:center;">수준 C</th><td style="border:1px solid #e2e8f0; padding:12px;">${resultData.rubrics.C}</td></tr>
+                            <tr><th style="border:1px solid #e2e8f0; padding:12px; background:#fff7ed; color:#c2410c; text-align:center;">수준 D</th><td style="border:1px solid #e2e8f0; padding:12px;">${resultData.rubrics.D}</td></tr>
+                            <tr><th style="border:1px solid #e2e8f0; padding:12px; background:#fef2f2; color:#b91c1c; text-align:center;">수준 E</th><td style="border:1px solid #e2e8f0; padding:12px;">${resultData.rubrics.E}</td></tr>
+                        </tbody>
+                    </table>
                 </div>
             </div>
         `;
 
-        contentBox.innerHTML = html;
+        // 🌟 3. A~E 생기부 세특 초안 및 바이트 계산기
+        let neisHtml = `
+            <div style="background:white; border: 1px solid #fef08a; border-top: 5px solid #eab308; border-radius: 12px; padding: 2rem; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+                <h3 style="margin:0 0 15px 0; color:#854d0e; border-bottom: 2px solid #fefce8; padding-bottom: 10px; font-size: 1.3rem;">💾 수준별 학교생활기록부 세특 기재 초안</h3>
+                <div style="display:flex; flex-direction:column; gap:15px;">
+        `;
+
+        ['A', 'B', 'C', 'D', 'E'].forEach(lvl => {
+            const neisText = resultData.neis[lvl] || "데이터가 생성되지 않았습니다.";
+            const neisByte = getNeisByteLength(neisText);
+            const byteColor = neisByte > 1500 ? "#ef4444" : "#15803d";
+            const lvlColor = levelColors[lvl];
+
+            neisHtml += `
+                <div style="border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
+                    <div style="background: #f8fafc; padding: 10px 15px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
+                        <strong style="color: ${lvlColor}; font-size: 1.05rem;">${lvl}수준 도달 학생</strong>
+                        <span style="font-size: 0.8rem; background: #fef08a; padding: 4px 10px; border-radius: 12px; color: ${byteColor}; font-weight: bold;">총 ${neisByte} Byte</span>
+                    </div>
+                    <div style="padding: 15px; font-size: 0.95rem; color: #334155; line-height: 1.6; background: #fffcf8;">
+                        ${neisText}
+                    </div>
+                </div>
+            `;
+        });
+        neisHtml += `</div></div>`;
+
+        // 🌟 최종 출력 조립
+        contentBox.innerHTML = studentHtml + teacherHtml + neisHtml;
 
         if (window.MathJax) {
             MathJax.typesetClear([contentBox]);
