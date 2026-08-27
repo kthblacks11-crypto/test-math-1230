@@ -9705,10 +9705,23 @@ function openPerformanceMaker() {
     const subjName = subjectData[currentSubject] ? subjectData[currentSubject].title : "과목 선택 필요";
     const subjNameEl = document.getElementById('perf-subject-name');
     if(subjNameEl) subjNameEl.innerText = subjName;
+    
+    // 💡 7가지 형식으로 확장된 드롭다운 세팅 (글쓰기와 구조화 분리)
+    const formatSelect = document.getElementById('perf-format-select');
+    if (formatSelect) {
+        formatSelect.innerHTML = `
+            <option value="단계적 서술형 평가 (수식 계산 및 논리 전개형)">단계적 서술형 평가 (수식 계산 및 논리 전개형)</option>
+            <option value="오류 분석 및 수학적 논증 (오류 찾기, 반례, 증명형)">오류 분석 및 수학적 논증 (오류 찾기, 반례, 증명형)</option>
+            <option value="수학적 모델링 (실생활 맥락 기반 최적해 찾기)">수학적 모델링 (실생활 맥락 기반 최적해 찾기)</option>
+            <option value="학생 주도 문항 출제 (문제 만들기 및 해설 제작형)">학생 주도 문항 출제 (문제 만들기 및 해설 제작형)</option>
+            <option value="공학도구 활용 탐구 (알지오매스/데스모스 활용 시각화)">공학도구 활용 탐구 (알지오매스/데스모스 활용 시각화)</option>
+            <option value="수학적 글쓰기 (서론·본론·결론 에세이형)">수학적 글쓰기 (서론·본론·결론 에세이 및 융합 보고서형)</option>
+            <option value="수학적 개념 구조화 (인포그래픽, 마인드맵)">수학적 개념 구조화 (인포그래픽, 마인드맵형)</option>
+        `;
+    }
     populatePerformanceStandards();
 }
 
-// 💡 1. 성취기준 목록 초기화 (첫 번째 드롭다운 세팅)
 function populatePerformanceStandards() {
     const container = document.getElementById('perf-standard-container');
     if (!container) return;
@@ -9718,13 +9731,12 @@ function populatePerformanceStandards() {
             <select class="option-btn perf-standard-select" style="flex: 1; text-align: left; padding: 0.8rem; margin: 0;">
                 <option value="">-- 문항의 기반이 될 성취기준을 선택하세요 --</option>
             </select>
-            <button class="save-btn" onclick="addPerfStandardSelect()" style="width: auto; margin: 0; padding: 0.8rem 1rem; background: #3b82f6;">➕ 추가</button>
+            <button class="save-btn" onclick="addPerfStandardSelect()" style="width: auto; margin: 0; padding: 0.8rem 1rem; background: #3b82f6;">➕ 성취기준 융합(추가)</button>
         </div>
     `;
     fillStandardOptions(container.querySelector('.perf-standard-select'));
 }
 
-// 💡 2. 동적 추가 버튼 누를 때 새로운 드롭다운 생성
 function addPerfStandardSelect() {
     const container = document.getElementById('perf-standard-container');
     const row = document.createElement('div');
@@ -9740,7 +9752,6 @@ function addPerfStandardSelect() {
     fillStandardOptions(row.querySelector('.perf-standard-select'));
 }
 
-// 💡 3. 드롭다운 안에 해당 과목 성취기준 목록 채워넣기
 function fillStandardOptions(selectEl) {
     if (!subjectData[currentSubject] || !subjectData[currentSubject].standards) return;
     subjectData[currentSubject].standards.forEach(std => {
@@ -9756,13 +9767,11 @@ function fillStandardOptions(selectEl) {
     });
 }
 
-// 💡 4. 메인 실행 엔진 (융합 성취기준 및 매트릭스 렌더링 적용)
 async function executePerformanceGeneration() {
     const isLoggedIn = await checkLogin();
     if (!isLoggedIn) return;
     if (!requireApiKey()) return;
 
-    // 선택된 성취기준들 수집
     const selects = document.querySelectorAll('.perf-standard-select');
     let stdInfoForAI = "";
     let selectedCount = 0;
@@ -9848,7 +9857,7 @@ async function executePerformanceGeneration() {
                     <div style="font-weight: bold; font-size: 0.9rem; color: ${color}; margin-bottom: 6px;">${step.title}</div>
                     <div style="font-size: 1rem; color: #0f172a; line-height: 1.6;">${step.question.replace(/\n/g, '<br>')}</div>
                     <div style="margin-top: 10px; min-height: 60px; background: #fdfcfa; border: 1px solid #e2e8f0; border-radius: 4px; padding: 10px; color: #cbd5e1; font-size: 0.8rem; text-align: center; display: flex; align-items: center; justify-content: center;">
-                        (학생 풀이 공간)
+                        (학생 풀이 작성 공간)
                     </div>
                 </div>
             `;
