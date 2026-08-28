@@ -169,6 +169,21 @@
                     <label style="cursor: pointer; background: #f1f5f9; padding: 8px 12px; border-radius: 6px; border: 1px solid #cbd5e1; font-size: 0.9rem;"><input type="checkbox" value="정보처리"> 정보처리</label>
                 </div>
             </div>
+<!-- 기존 2번(교과역량)과 3번(평가형식) 사이에 융합 옵션 체크박스를 추가합니다. -->
+            <div class="admin-form-group" style="margin-top: 1.5rem;">
+                <label style="font-weight:bold; color:var(--primary);">2-1. 융합 및 연계 옵션 (선택)</label>
+                <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-top: 8px;">
+                    <label style="cursor: pointer; background: #fdf4ff; padding: 8px 12px; border-radius: 6px; border: 1px solid #f0abfc; font-size: 0.9rem; color: #a21caf; font-weight: bold;">
+                        <input type="checkbox" id="chk-real-life" value="실생활"> 🌍 실생활 연결
+                    </label>
+                    <label style="cursor: pointer; background: #f0fdf4; padding: 8px 12px; border-radius: 6px; border: 1px solid #86efac; font-size: 0.9rem; color: #166534; font-weight: bold;">
+                        <input type="checkbox" id="chk-other-subjects" value="타교과"> 🧬 타교과 연결
+                    </label>
+                </div>
+                <div style="margin-top: 6px; font-size: 0.8rem; color: #64748b;">
+                    * 두 옵션을 모두 해제하면 '순수 수학적 맥락' 안에서만 문항이 생성됩니다.
+                </div>
+            </div>
 
             <div class="admin-form-group" style="margin-top: 1.5rem;">
                 <label style="font-weight:bold; color:var(--primary);">3. 평가 형식 (수행평가 종류)</label>

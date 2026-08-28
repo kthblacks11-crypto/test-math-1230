@@ -1688,6 +1688,11 @@ async function changeSubject() {
         populatePerformanceStandards();
     }
 
+    // ✨👇 [여기에 딱 4줄만 추가했습니다!] 수행평가 탭의 보라색 과목 이름도 즉시 업데이트! 👇✨
+    const perfSubjNameEl = document.getElementById('perf-subject-name');
+    if (perfSubjNameEl && data) {
+        perfSubjNameEl.innerText = data.title;
+    }
     // 🚫 [핵심 수정 1] 여기서 loadBookmark()를 호출하던 것을 삭제했습니다. (유지됨)
 
     // 👇 [여기에 3줄 추가] 과목을 바꾸면 무조건 초기 화면으로 강제 이동 및 퀴즈 상자 닫기 (유지됨)
@@ -9795,6 +9800,8 @@ async function executePerformanceGeneration() {
         return;
     }
 
+    const isRealLife = document.getElementById('chk-real-life').checked;
+    const isOtherSubject = document.getElementById('chk-other-subjects').checked;
     const format = document.getElementById('perf-format-select').value;
 
     const btn = document.getElementById('btn-generate-perf');
@@ -9819,6 +9826,9 @@ async function executePerformanceGeneration() {
                 standardsInfo: stdInfoForAI,
                 assessmentFormat: format,
                 selectedCompetencies: checkedComps.join(", "),
+                isRealLife: isRealLife,        // 🌟 추가됨: 실생활 체크 여부
+                isOtherSubject: isOtherSubject, // 🌟 추가됨: 타교과 체크 여부
+                subjectCode: currentSubject,    // 🌟 추가됨: 백엔드에서 특화 루브릭을 찾기 위한 과목 코드
                 apiKey: userApiKey
             })
         });
