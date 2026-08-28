@@ -9862,10 +9862,14 @@ async function executePerformanceGeneration() {
 
         resultData.steps.forEach(step => {
             const color = levelColors[step.level] || '#64748b';
+            // SVG가 존재하면 중앙 정렬된 div로 감싸서 출력
+            const qSvgHtml = step.question_svg ? `<div style="text-align:center; margin: 15px 0;">${step.question_svg}</div>` : '';
+
             studentHtml += `
                 <div style="padding: 10px 15px; border-bottom: 1px dashed #e2e8f0;">
                     <div style="font-weight: bold; font-size: 0.9rem; color: ${color}; margin-bottom: 6px;">${step.title}</div>
-                    <div style="font-size: 1rem; color: #0f172a; line-height: 1.6;">${step.question.replace(/\n/g, '<br>')}</div>
+                    <div style="font-size: 1rem; color: #0f172a; line-height: 1.6;">${step.question}</div>
+                    ${qSvgHtml}
                     <div style="margin-top: 10px; min-height: 60px; background: #fdfcfa; border: 1px solid #e2e8f0; border-radius: 4px; padding: 10px; color: #cbd5e1; font-size: 0.8rem; text-align: center; display: flex; align-items: center; justify-content: center;">
                         (학생 풀이 작성 공간)
                     </div>
@@ -9884,10 +9888,14 @@ async function executePerformanceGeneration() {
 
         resultData.steps.forEach(step => {
             const color = levelColors[step.level] || '#64748b';
+            // SVG가 존재하면 중앙 정렬된 div로 감싸서 출력
+            const aSvgHtml = step.answer_svg ? `<div style="text-align:center; margin: 15px 0; background:white; padding:10px; border-radius:8px;">${step.answer_svg}</div>` : '';
+
             teacherHtml += `
                 <div style="background: #e0f2fe; border-left: 4px solid ${color}; padding: 12px 15px; border-radius: 4px;">
                     <strong style="color: ${color}; font-size: 0.85rem;">[${step.title}]</strong>
-                    <div style="margin-top: 5px; font-size: 0.95rem; color: #1e3a8a; line-height: 1.6;">${step.answer.replace(/\n/g, '<br>')}</div>
+                    <div style="margin-top: 5px; font-size: 0.95rem; color: #1e3a8a; line-height: 1.6;">${step.answer}</div>
+                    ${aSvgHtml}
                 </div>
             `;
         });
