@@ -184,7 +184,10 @@
                     * 두 옵션을 모두 해제하면 '순수 수학적 맥락' 안에서만 문항이 생성됩니다.
                 </div>
             </div>
-
+            <div class="admin-form-group" style="margin-top: 1.5rem;">
+                <label style="font-weight:bold; color:var(--primary);">2-2. 선생님 특별 요청사항 (선택)</label>
+                <textarea id="perf-teacher-request" placeholder="예: '우리 지역 특산물인 사과를 소재로 해줘', 'D수준 학생도 풀 수 있게 공식을 무조건 적어줘' 등 특별히 반영하고 싶은 내용을 자유롭게 적어주세요." style="width: 100%; height: 60px; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; margin-top: 8px; font-family: inherit; resize: vertical; box-sizing: border-box;"></textarea>
+            </div>
             <div class="admin-form-group" style="margin-top: 1.5rem;">
                 <label style="font-weight:bold; color:var(--primary);">3. 평가 형식 (수행평가 종류)</label>
                 <select id="perf-format-select" class="option-btn" style="text-align: left; padding: 0.8rem; margin-top: 5px;">
@@ -201,11 +204,16 @@
 
             <!-- 렌더링 결과 화면 구역 -->
             <div id="perf-result-zone" style="display: none; margin-top: 3rem; border-top: 2px dashed #e2e8f0; padding-top: 2rem;">
-                <h3 style="color: #c026d3; margin-bottom: 1.5rem;">✨ 생성된 수행평가 자료</h3>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 10px;">
+                    <h3 style="color: #c026d3; margin: 0;">✨ 생성된 수행평가 자료</h3>
+                    <!-- 다운로드 버튼 (js 프린트/HTML 다운 기능 연동) -->
+                    <div style="display: flex; gap: 10px;">
+                        <button onclick="downloadPerfAsPDF()" style="background: #ef4444; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 0.85rem; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">📄 PDF(인쇄) 저장</button>
+                        <button onclick="downloadPerfAsWord()" style="background: #2563eb; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 0.85rem; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">📝 Word 문서 저장</button>
+                    </div>
+                </div>
                 <div id="perf-output-content"></div>
             </div>
-        </div>
-    </div>
 <div id="cut-score" class="section">
     <h2>📊 성취평가제 분할점수 산출 (AI 마법사)</h2>
     

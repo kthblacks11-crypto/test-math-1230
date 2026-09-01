@@ -9777,6 +9777,7 @@ async function executePerformanceGeneration() {
     if (!isLoggedIn) return;
     if (!requireApiKey()) return;
 
+    // ... (성취기준, 역량 검사 코드 기존 유지) ...
     const selects = document.querySelectorAll('.perf-standard-select');
     let stdInfoForAI = "";
     let selectedCount = 0;
@@ -9789,20 +9790,17 @@ async function executePerformanceGeneration() {
         }
     });
 
-    if (selectedCount === 0) {
-        alert("최소 1개 이상의 성취기준을 선택해주세요!");
-        return;
-    }
+    if (selectedCount === 0) { alert("최소 1개 이상의 성취기준을 선택해주세요!"); return; }
 
     const checkedComps = Array.from(document.querySelectorAll('#perf-competencies input:checked')).map(cb => cb.value);
-    if (checkedComps.length === 0) {
-        alert("반영할 교과 역량을 최소 1개 이상 선택해주세요.");
-        return;
-    }
+    if (checkedComps.length === 0) { alert("반영할 교과 역량을 최소 1개 이상 선택해주세요."); return; }
 
     const isRealLife = document.getElementById('chk-real-life').checked;
     const isOtherSubject = document.getElementById('chk-other-subjects').checked;
     const format = document.getElementById('perf-format-select').value;
+    
+    // 🌟 1. 주관식 요청사항 가져오기
+    const teacherRequest = document.getElementById('perf-teacher-request') ? document.getElementById('perf-teacher-request').value.trim() : "";
 
     const btn = document.getElementById('btn-generate-perf');
     const originalText = btn.innerText;
@@ -9826,9 +9824,10 @@ async function executePerformanceGeneration() {
                 standardsInfo: stdInfoForAI,
                 assessmentFormat: format,
                 selectedCompetencies: checkedComps.join(", "),
-                isRealLife: isRealLife,        // 🌟 추가됨: 실생활 체크 여부
-                isOtherSubject: isOtherSubject, // 🌟 추가됨: 타교과 체크 여부
-                subjectCode: currentSubject,    // 🌟 추가됨: 백엔드에서 특화 루브릭을 찾기 위한 과목 코드
+                isRealLife: isRealLife,
+                isOtherSubject: isOtherSubject,
+                subjectCode: currentSubject,
+                teacherRequest: teacherRequest, // 🌟 백엔드로 주관식 요청 넘김
                 apiKey: userApiKey
             })
         });
@@ -9843,16 +9842,14 @@ async function executePerformanceGeneration() {
 
         const levelColors = { 'E': '#ef4444', 'D': '#f97316', 'C': '#f59e0b', 'B': '#3b82f6', 'A': '#10b981' };
 
-        // 🌟 1. 학생용 평가지 (질문 먼저 노출)
+        // 🌟 [학생용 평가지 렌더링 유지] ... (기존과 동일)
         let studentHtml = `
             <div style="background:white; border: 1px solid #cbd5e1; border-top: 5px solid #d946ef; border-radius: 12px; padding: 2rem; margin-bottom: 2rem; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 2px solid #f1f5f9; padding-bottom: 10px;">
                     <h3 style="margin:0; color:#1e3a8a; font-size: 1.3rem;">🧑‍🎓 학생용 수행평가지</h3>
                     <span style="background:#fdf4ff; color:#a21caf; padding:4px 10px; border-radius:20px; font-size:0.8rem; font-weight:bold;">${format.split(' ')[0]}</span>
                 </div>
-                
                 <h4 style="margin:0 0 15px 0; color:#0f172a; text-align: center; font-size: 1.2rem;">${resultData.assessmentTitle}</h4>
-                
                 <div style="background: #f8fafc; padding: 15px; border-radius: 8px; font-size: 1rem; line-height: 1.7; color: #1e293b; margin-bottom: 20px; border: 1px dashed #cbd5e1;">
                     <strong style="color:#0f172a;">[탐구 상황 및 과제]</strong><br>
                     ${resultData.context.replace(/\n/g, '<br>')}
@@ -9862,9 +9859,7 @@ async function executePerformanceGeneration() {
 
         resultData.steps.forEach(step => {
             const color = levelColors[step.level] || '#64748b';
-            // SVG가 존재하면 중앙 정렬된 div로 감싸서 출력
             const qSvgHtml = step.question_svg ? `<div style="text-align:center; margin: 15px 0;">${step.question_svg}</div>` : '';
-
             studentHtml += `
                 <div style="padding: 10px 15px; border-bottom: 1px dashed #e2e8f0;">
                     <div style="font-weight: bold; font-size: 0.9rem; color: ${color}; margin-bottom: 6px;">${step.title}</div>
@@ -9878,7 +9873,7 @@ async function executePerformanceGeneration() {
         });
         studentHtml += `</div></div>`;
 
-        // 🌟 2. 교사용 모범 정답
+        // 🌟 [교사용 정답지 렌더링 유지] ... (기존과 동일)
         let teacherHtml = `
             <div style="background:white; border: 1px solid #cbd5e1; border-top: 5px solid #1e3a8a; border-radius: 12px; padding: 2rem; margin-bottom: 2rem; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
                 <h3 style="margin:0 0 15px 0; color:#1e3a8a; border-bottom: 2px solid #f1f5f9; padding-bottom: 10px; font-size: 1.3rem;">👨‍🏫 교사용 해설 및 평가 루브릭</h3>
@@ -9888,9 +9883,7 @@ async function executePerformanceGeneration() {
 
         resultData.steps.forEach(step => {
             const color = levelColors[step.level] || '#64748b';
-            // SVG가 존재하면 중앙 정렬된 div로 감싸서 출력
             const aSvgHtml = step.answer_svg ? `<div style="text-align:center; margin: 15px 0; background:white; padding:10px; border-radius:8px;">${step.answer_svg}</div>` : '';
-
             teacherHtml += `
                 <div style="background: #e0f2fe; border-left: 4px solid ${color}; padding: 12px 15px; border-radius: 4px;">
                     <strong style="color: ${color}; font-size: 0.85rem;">[${step.title}]</strong>
@@ -9900,15 +9893,15 @@ async function executePerformanceGeneration() {
             `;
         });
 
-        // 🌟 3. 매트릭스(표) 형태의 다차원 평가 루브릭 렌더링
+        // 🌟 2. 매트릭스 다차원 루브릭 (예시 포함)
         teacherHtml += `
                 </div>
                 <h4 style="margin:0 0 10px 0; color:#0f766e;">📊 평가 요소별 다차원 성취수준 루브릭</h4>
                 <div style="overflow-x: auto;">
-                    <table style="width: 100%; border-collapse: collapse; min-width: 800px; font-size: 0.85rem; text-align: left;">
+                    <table style="width: 100%; border-collapse: collapse; min-width: 1000px; font-size: 0.85rem; text-align: left;">
                         <thead style="background: #f1f5f9; color: #334155;">
                             <tr>
-                                <th style="border:1px solid #cbd5e1; padding:10px; text-align:center; width: 15%;">평가 요소 ↓</th>
+                                <th style="border:1px solid #cbd5e1; padding:10px; text-align:center; width: 12%;">평가 요소 ↓</th>
                                 <th style="border:1px solid #cbd5e1; padding:10px; text-align:center; color:#15803d;">수준 A</th>
                                 <th style="border:1px solid #cbd5e1; padding:10px; text-align:center; color:#1d4ed8;">수준 B</th>
                                 <th style="border:1px solid #cbd5e1; padding:10px; text-align:center; color:#b45309;">수준 C</th>
@@ -9920,20 +9913,28 @@ async function executePerformanceGeneration() {
         `;
 
         resultData.rubric_matrix.forEach(row => {
+            // 💡 [변경됨] 예시 렌더링 로직 추가
+            const renderCell = (data) => {
+                if(typeof data === 'object' && data !== null) {
+                    return `<div>${data.desc}</div><div style="margin-top:6px; padding:6px; background:#f8fafc; border-radius:4px; font-size:0.75rem; color:#475569; border-left:3px solid #cbd5e1;"><em>예시: ${data.example}</em></div>`;
+                }
+                return data; // 과거 포맷 대응
+            };
+
             teacherHtml += `
                 <tr>
                     <th style="border:1px solid #cbd5e1; padding:10px; background: #f8fafc; text-align:center; word-break: keep-all; font-weight:bold; color:#1e40af;">${row.element}</th>
-                    <td style="border:1px solid #cbd5e1; padding:10px;">${row.A}</td>
-                    <td style="border:1px solid #cbd5e1; padding:10px;">${row.B}</td>
-                    <td style="border:1px solid #cbd5e1; padding:10px;">${row.C}</td>
-                    <td style="border:1px solid #cbd5e1; padding:10px;">${row.D}</td>
-                    <td style="border:1px solid #cbd5e1; padding:10px;">${row.E}</td>
+                    <td style="border:1px solid #cbd5e1; padding:10px; vertical-align: top;">${renderCell(row.A)}</td>
+                    <td style="border:1px solid #cbd5e1; padding:10px; vertical-align: top;">${renderCell(row.B)}</td>
+                    <td style="border:1px solid #cbd5e1; padding:10px; vertical-align: top;">${renderCell(row.C)}</td>
+                    <td style="border:1px solid #cbd5e1; padding:10px; vertical-align: top;">${renderCell(row.D)}</td>
+                    <td style="border:1px solid #cbd5e1; padding:10px; vertical-align: top;">${renderCell(row.E)}</td>
                 </tr>
             `;
         });
         teacherHtml += `</tbody></table></div></div>`;
 
-        // 🌟 4. A~E 생기부 세특 초안 및 바이트 계산기
+        // 🌟 [세특 렌더링 유지] ... (기존과 동일)
         let neisHtml = `
             <div style="background:white; border: 1px solid #fef08a; border-top: 5px solid #eab308; border-radius: 12px; padding: 2rem; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
                 <h3 style="margin:0 0 15px 0; color:#854d0e; border-bottom: 2px solid #fefce8; padding-bottom: 10px; font-size: 1.3rem;">💾 수준별 학교생활기록부 세특 기재 초안</h3>
@@ -9977,6 +9978,57 @@ async function executePerformanceGeneration() {
     }
 }
 
+// 기존 파일 하단 또는 적절한 곳에 다운로드 헬퍼 함수 추가
+function downloadPerfAsPDF() {
+    const content = document.getElementById('perf-output-content').innerHTML;
+    const printWindow = window.open('', '', 'width=900,height=800');
+    printWindow.document.write(`
+        <html><head><title>수행평가 자료</title>
+        <style>
+            body { font-family: 'Malgun Gothic', sans-serif; padding: 20px; line-height: 1.6; color: #1e293b; }
+            table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+            th, td { border: 1px solid #cbd5e1; padding: 8px; text-align: left; }
+            th { background-color: #f1f5f9; }
+            img { max-width: 100%; height: auto; }
+            svg { max-width: 100%; height: auto; }
+            /* 인쇄 시 여백 및 페이지 넘김 설정 */
+            @media print {
+                div { page-break-inside: avoid; }
+                table { page-break-inside: auto; }
+                tr { page-break-inside: avoid; page-break-after: auto; }
+            }
+        </style>
+        </head><body>${content}</body></html>
+    `);
+    printWindow.document.close();
+    // MathJax 렌더링 시간을 주기 위해 1초 대기 후 인쇄
+    setTimeout(() => {
+        printWindow.print();
+        printWindow.close();
+    }, 1000);
+}
+
+function downloadPerfAsWord() {
+    const content = document.getElementById('perf-output-content').innerHTML;
+    // Word 저장을 위해 HTML을 변환
+    const preHtml = "<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'><title>Export HTML To Doc</title></head><body>";
+    const postHtml = "</body></html>";
+    const html = preHtml + content + postHtml;
+
+    const blob = new Blob(['\ufeff', html], { type: 'application/msword' });
+    const url = 'data:application/vnd.ms-word;charset=utf-8,' + encodeURIComponent(html);
+    const downloadLink = document.createElement("a");
+
+    document.body.appendChild(downloadLink);
+    if(navigator.msSaveOrOpenBlob ){
+        navigator.msSaveOrOpenBlob(blob, '수행평가자료.doc');
+    }else{
+        downloadLink.href = url;
+        downloadLink.download = '수행평가자료.doc';
+        downloadLink.click();
+    }
+    document.body.removeChild(downloadLink);
+}
 
 // 기존 exposeToWindow 개체가 하단에 선언되어 있다면 아래 항목들을 매핑 추가해주세요.
 // toggleLatexHelper, closeLatexHelper, insertLatex
