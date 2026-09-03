@@ -9978,56 +9978,81 @@ async function executePerformanceGeneration() {
     }
 }
 
-// 기존 파일 하단 또는 적절한 곳에 다운로드 헬퍼 함수 추가
+// ==========================================
+// 📄 PDF 및 구글 Docs 저장 기능 (오류 완벽 해결)
+// ==========================================
+
 function downloadPerfAsPDF() {
     const content = document.getElementById('perf-output-content').innerHTML;
-    const printWindow = window.open('', '', 'width=900,height=800');
+    
+    // 💡 팝업 차단을 막기 위해 새 창 띄우기
+    const printWindow = window.open('', '_blank', 'width=900,height=800');
+    if (!printWindow) {
+        alert("🚨 브라우저의 '팝업 차단'이 설정되어 있어 PDF 창을 열 수 없습니다. 팝업 차단을 해제해 주세요!");
+        return;
+    }
+
+    // 💡 SVG가 찢어지지 않도록 CSS 강화 및 MathJax 스크립트 강제 주입
     printWindow.document.write(`
+        <!DOCTYPE html>
         <html><head><title>수행평가 자료</title>
         <style>
-            body { font-family: 'Malgun Gothic', sans-serif; padding: 20px; line-height: 1.6; color: #1e293b; }
-            table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
-            th, td { border: 1px solid #cbd5e1; padding: 8px; text-align: left; }
-            th { background-color: #f1f5f9; }
+            body { font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif; padding: 20px; line-height: 1.6; color: #1e293b; background: white; }
+            table { width: 100%; border-collapse: collapse; margin-bottom: 20px; page-break-inside: auto; }
+            th, td { border: 1px solid #cbd5e1; padding: 10px; text-align: left; }
+            th { background-color: #f1f5f9; font-weight: bold; }
+            tr { page-break-inside: avoid; page-break-after: auto; }
+            
+            /* SVG 크기가 인쇄 시 커지지 않도록 강제 제어 */
+            svg { max-width: 250px !important; height: auto !important; display: block; margin: 0 auto; }
             img { max-width: 100%; height: auto; }
-            svg { max-width: 100%; height: auto; }
-            /* 인쇄 시 여백 및 페이지 넘김 설정 */
+            
             @media print {
+                body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
                 div { page-break-inside: avoid; }
-                table { page-break-inside: auto; }
-                tr { page-break-inside: avoid; page-break-after: auto; }
             }
         </style>
-        </head><body>${content}</body></html>
+        <!-- 인쇄 창에서도 수식이 렌더링되도록 MathJax 불러오기 -->
+        <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+        </head><body>
+            ${content}
+            <script>
+                // 수식 변환이 완료되면 인쇄창 띄우기
+                window.onload = function() {
+                    setTimeout(function() {
+                        window.print();
+                    }, 1000);
+                }
+            </script>
+        </body></html>
     `);
     printWindow.document.close();
-    // MathJax 렌더링 시간을 주기 위해 1초 대기 후 인쇄
-    setTimeout(() => {
-        printWindow.print();
-        printWindow.close();
-    }, 1000);
 }
 
-function downloadPerfAsWord() {
-    const content = document.getElementById('perf-output-content').innerHTML;
-    // Word 저장을 위해 HTML을 변환
-    const preHtml = "<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'><title>Export HTML To Doc</title></head><body>";
-    const postHtml = "</body></html>";
-    const html = preHtml + content + postHtml;
+// 💡 MS Word의 호환성 문제를 피하고, 구글 Docs로 화면을 즉시 내보내는 스마트한 기능
+async function exportToGoogleDocs() {
+    const contentBox = document.getElementById('perf-output-content');
+    
+    try {
+        // 1. 렌더링된 HTML(표, 수식, 서식 등)을 복사 가능한 형태로 만듭니다.
+        const htmlContent = contentBox.innerHTML;
+        const blobHtml = new Blob([htmlContent], { type: 'text/html' });
+        const blobText = new Blob([contentBox.innerText], { type: 'text/plain' });
+        const data = [new ClipboardItem({ 'text/html': blobHtml, 'text/plain': blobText })];
 
-    const blob = new Blob(['\ufeff', html], { type: 'application/msword' });
-    const url = 'data:application/vnd.ms-word;charset=utf-8,' + encodeURIComponent(html);
-    const downloadLink = document.createElement("a");
+        // 2. 클립보드에 HTML 서식 그대로 복사
+        await navigator.clipboard.write(data);
+        
+        // 3. 사용자 안내 후 새 구글 문서(빈 문서) 열기
+        alert("✅ 평가 자료가 완벽하게 복사되었습니다!\n\n1. 확인을 누르면 '새 구글 문서' 창이 열립니다.\n2. 열린 문서에서 키보드의 [Ctrl + V]를 눌러 붙여넣기 하세요.\n(표와 텍스트 서식이 그대로 유지됩니다.)");
+        
+        // 구글 Docs 빈 문서 생성 링크
+        window.open('https://docs.new', '_blank');
 
-    document.body.appendChild(downloadLink);
-    if(navigator.msSaveOrOpenBlob ){
-        navigator.msSaveOrOpenBlob(blob, '수행평가자료.doc');
-    }else{
-        downloadLink.href = url;
-        downloadLink.download = '수행평가자료.doc';
-        downloadLink.click();
+    } catch (err) {
+        console.error("복사 실패:", err);
+        alert("🚨 브라우저 권한 문제로 복사하지 못했습니다. 내용을 직접 드래그해서 복사해 주세요.");
     }
-    document.body.removeChild(downloadLink);
 }
 
 // 기존 exposeToWindow 개체가 하단에 선언되어 있다면 아래 항목들을 매핑 추가해주세요.
@@ -10074,7 +10099,8 @@ const exposeToWindow = {
     resetManualScores, syncManualStructureFromDB, addManualTableQuestion, openReadOnlyExamViewer,
     toggleLatexHelper, closeLatexHelper, insertLatex, runTweezerRepair,
     // 👇👇👇 여기에 새로운 수행평가 함수 3가지를 추가했습니다! 👇👇👇
-    openPerformanceMaker, populatePerformanceStandards, executePerformanceGeneration, addPerfStandardSelect
+    openPerformanceMaker, populatePerformanceStandards, executePerformanceGeneration, addPerfStandardSelect,
+    downloadPerfAsPDF, exportToGoogleDocs
 };
 
 for (const [fnName, fn] of Object.entries(exposeToWindow)) {
