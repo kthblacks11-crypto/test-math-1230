@@ -9913,22 +9913,41 @@ async function executePerformanceGeneration() {
         `;
 
         resultData.rubric_matrix.forEach(row => {
-            // 💡 [변경됨] 예시 렌더링 로직 추가
+            // 💡 [혁신 업데이트] linkage(기준 연계)와 evidence(반응 예측)를 예쁘게 분리하여 디자인
             const renderCell = (data) => {
-                if(typeof data === 'object' && data !== null) {
-                    return `<div>${data.desc}</div><div style="margin-top:6px; padding:6px; background:#f8fafc; border-radius:4px; font-size:0.75rem; color:#475569; border-left:3px solid #cbd5e1;"><em>예시: ${data.example}</em></div>`;
+                if (typeof data === 'object' && data !== null) {
+                    let extraHtml = "";
+                    // 새로운 분리형 스키마(linkage, evidence) 지원
+                    if (data.linkage && data.evidence) {
+                        extraHtml = `
+                            <div style="margin-top:8px; padding:8px; background:#f0fdf4; border-radius:6px; font-size:0.8rem; color:#166534; border-left:4px solid #22c55e;">
+                                <strong style="color:#15803d; display:block; margin-bottom:3px;">🔗 [국가 기준 연계]</strong>
+                                ${data.linkage}
+                            </div>
+                            <div style="margin-top:6px; padding:8px; background:#f8fafc; border-radius:6px; font-size:0.8rem; color:#475569; border-left:4px solid #94a3b8;">
+                                <strong style="color:#334155; display:block; margin-bottom:3px;">📝 [학생 반응 예측]</strong>
+                                ${data.evidence}
+                            </div>
+                        `;
+                    } 
+                    // 혹시 과거 형식(example)으로 응답이 올 경우를 대비한 호환성 유지
+                    else if (data.example) {
+                        extraHtml = `<div style="margin-top:6px; padding:6px; background:#f8fafc; border-radius:4px; font-size:0.75rem; color:#475569; border-left:3px solid #cbd5e1;"><em>예시: ${data.example}</em></div>`;
+                    }
+                    
+                    return `<div style="font-weight:600; color:#1e293b; line-height:1.5; font-size:0.9rem;">${data.desc}</div>${extraHtml}`;
                 }
-                return data; // 과거 포맷 대응
+                return data; // 단순 텍스트 대응
             };
 
             teacherHtml += `
                 <tr>
-                    <th style="border:1px solid #cbd5e1; padding:10px; background: #f8fafc; text-align:center; word-break: keep-all; font-weight:bold; color:#1e40af;">${row.element}</th>
-                    <td style="border:1px solid #cbd5e1; padding:10px; vertical-align: top;">${renderCell(row.A)}</td>
-                    <td style="border:1px solid #cbd5e1; padding:10px; vertical-align: top;">${renderCell(row.B)}</td>
-                    <td style="border:1px solid #cbd5e1; padding:10px; vertical-align: top;">${renderCell(row.C)}</td>
-                    <td style="border:1px solid #cbd5e1; padding:10px; vertical-align: top;">${renderCell(row.D)}</td>
-                    <td style="border:1px solid #cbd5e1; padding:10px; vertical-align: top;">${renderCell(row.E)}</td>
+                    <th style="border:1px solid #cbd5e1; padding:12px; background: #f8fafc; text-align:center; word-break: keep-all; font-weight:bold; color:#1e40af; font-size:0.95rem;">${row.element}</th>
+                    <td style="border:1px solid #cbd5e1; padding:12px; vertical-align: top;">${renderCell(row.A)}</td>
+                    <td style="border:1px solid #cbd5e1; padding:12px; vertical-align: top;">${renderCell(row.B)}</td>
+                    <td style="border:1px solid #cbd5e1; padding:12px; vertical-align: top;">${renderCell(row.C)}</td>
+                    <td style="border:1px solid #cbd5e1; padding:12px; vertical-align: top;">${renderCell(row.D)}</td>
+                    <td style="border:1px solid #cbd5e1; padding:12px; vertical-align: top;">${renderCell(row.E)}</td>
                 </tr>
             `;
         });
