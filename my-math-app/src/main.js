@@ -5588,6 +5588,9 @@ async function resetMCutScores() {
 }
 
 window.onload = async () => {
+
+    injectLatexHelperHTML();
+
     // 1. DB 다운로드 대기 (이미 끝났으면 즉시 통과)
     if (!isDbLoaded && dbLoadPromise) {
         await dbLoadPromise; 
@@ -9692,6 +9695,153 @@ function initLatexHelperDrag() {
         document.ontouchmove = null;
     }
 }
+
+//latex 문법 모음
+
+function injectLatexHelperHTML() {
+    if (document.getElementById('latex-floating-window')) return; // 이미 있으면 통과
+
+    const latexHTML = String.raw`
+    <div id="latex-floating-window" class="latex-drg-window" style="width: 580px; display: none;"> 
+        <div id="latex-floating-header" class="latex-drg-header">
+            <span>📐 고등학교 수학·과학 LaTeX 문법 총정리 (완전판)</span>
+            <button type="button" class="latex-drg-close" onclick="closeLatexHelper()">&times;</button>
+        </div>
+        <div class="latex-drg-body">
+            <p style="margin: 0 0 12px 0; font-size: 0.85rem; color: #64748b; line-height: 1.4;">
+                💡 <strong>팁:</strong> 각 기호나 수식의 <code style="color: #b8336a;">코드</code>를 개별적으로 클릭하면 일지에 입력됩니다. 스크롤을 내려 원하는 기호를 찾아보세요.
+            </p>
+            <div class="latex-section-title">1. 그리스 문자 및 기본 기호</div>
+        <table>
+            <thead><tr><th>기능</th><th>입력 코드 (클릭)</th><th style="text-align: center; width: 100px;">미리보기</th></tr></thead>
+            <tbody>
+                <tr><td>알파/베타/감마</td><td><code onclick="insertLatex('\\alpha')">\alpha</code>, <code onclick="insertLatex('\\beta')">\beta</code>, <code onclick="insertLatex('\\gamma')">\gamma</code></td><td style="text-align: center;">$\alpha, \beta, \gamma$</td></tr>
+                <tr><td>델타/세타/파이</td><td><code onclick="insertLatex('\\Delta')">\Delta</code>, <code onclick="insertLatex('\\theta')">\theta</code>, <code onclick="insertLatex('\\pi')">\pi</code></td><td style="text-align: center;">$\Delta, \theta, \pi$</td></tr>
+                <tr><td>뮤/시그마/오메가</td><td><code onclick="insertLatex('\\mu')">\mu</code>, <code onclick="insertLatex('\\sigma')">\sigma</code>, <code onclick="insertLatex('\\Omega')">\Omega</code></td><td style="text-align: center;">$\mu, \sigma, \Omega$</td></tr>
+                <tr><td>대소/같지않음</td><td><code onclick="insertLatex('>')">></code>, <code onclick="insertLatex('<')"><</code>, <code onclick="insertLatex('\\neq')">\neq</code></td><td style="text-align: center;">$>, <, \neq$</td></tr>
+                <tr><td>근사치 / 비례</td><td><code onclick="insertLatex('\\approx')">\approx</code>, <code onclick="insertLatex('\\propto')">\propto</code></td><td style="text-align: center;">$\approx, \propto$</td></tr>
+                <tr><td>그러므로/왜냐하면</td><td><code onclick="insertLatex('\\therefore')">\therefore</code>, <code onclick="insertLatex('\\because')">\because</code></td><td style="text-align: center;">$\therefore, \because$</td></tr>
+            </tbody>
+        </table>
+
+        <div class="latex-section-title">2. 기하 및 도형</div>
+        <table>
+            <thead><tr><th>기능</th><th>입력 코드 (클릭)</th><th style="text-align: center; width: 100px;">미리보기</th></tr></thead>
+            <tbody>
+                <tr><td>선분 / 직선</td><td><code onclick="insertLatex('\\overline{AB}')">\overline{AB}</code>, <code onclick="insertLatex('\\overleftrightarrow{AB}')">\overleftrightarrow{...}</code></td><td style="text-align: center;">$\overline{AB}, \overleftrightarrow{AB}$</td></tr>
+                <tr><td>수직 / 평행</td><td><code onclick="insertLatex('\\perp')">\perp</code>, <code onclick="insertLatex('\\parallel')">\parallel</code></td><td style="text-align: center;">$\perp, \parallel$</td></tr>
+                <tr><td>삼각형 / 각도</td><td><code onclick="insertLatex('\\triangle ABC')">\triangle ABC</code>, <code onclick="insertLatex('\\angle A')">\angle A</code></td><td style="text-align: center;">$\triangle ABC, \angle A$</td></tr>
+                <tr><td>합동 / 닮음</td><td><code onclick="insertLatex('\\equiv')">\equiv</code>, <code onclick="insertLatex('\\sim')">\sim</code></td><td style="text-align: center;">$\equiv, \sim$</td></tr>
+            </tbody>
+        </table>
+
+        <div class="latex-section-title">3. 집합과 명제</div>
+        <table>
+            <thead><tr><th>기능</th><th>입력 코드 (클릭)</th><th style="text-align: center; width: 100px;">미리보기</th></tr></thead>
+            <tbody>
+                <tr><td>원소포함/미포함</td><td><code onclick="insertLatex('\\in')">\in</code>, <code onclick="insertLatex('\\notin')">\notin</code></td><td style="text-align: center;">$\in, \notin$</td></tr>
+                <tr><td>부분집합/공집합</td><td><code onclick="insertLatex('\\subset')">\subset</code>, <code onclick="insertLatex('\\emptyset')">\emptyset</code></td><td style="text-align: center;">$\subset, \emptyset$</td></tr>
+                <tr><td>교집합 / 합집합</td><td><code onclick="insertLatex('\\cap')">\cap</code>, <code onclick="insertLatex('\\cup')">\cup</code></td><td style="text-align: center;">$\cap, \cup$</td></tr>
+                <tr><td>모든 / 어떤(존재)</td><td><code onclick="insertLatex('\\forall')">\forall</code>, <code onclick="insertLatex('\\exists')">\exists</code></td><td style="text-align: center;">$\forall, \exists$</td></tr>
+                <tr><td>명제(이면/동치)</td><td><code onclick="insertLatex('\\rightarrow')">\rightarrow</code>, <code onclick="insertLatex('\\iff')">\iff</code></td><td style="text-align: center;">$\rightarrow, \iff$</td></tr>
+                <tr><td>실수/자연수 집합</td><td><code onclick="insertLatex('\\mathbb{R}')">\mathbb{R}</code>, <code onclick="insertLatex('\\mathbb{N}')">\mathbb{N}</code></td><td style="text-align: center;">$\mathbb{R}, \mathbb{N}$</td></tr>
+            </tbody>
+        </table>
+
+        <div class="latex-section-title">4. 분수, 거듭제곱 및 행렬</div>
+        <table>
+            <thead><tr><th>기능</th><th>입력 코드 (클릭)</th><th style="text-align: center; width: 100px;">미리보기</th></tr></thead>
+            <tbody>
+                <tr><td>분수 / 절댓값</td><td><code onclick="insertLatex('\\frac{a}{b}')">\frac{a}{b}</code>, <code onclick="insertLatex('|x|')">|x|</code></td><td style="text-align: center;">$\frac{a}{b}, |x|$</td></tr>
+                <tr><td>거듭제곱/아래첨자</td><td><code onclick="insertLatex('x^2')">x^2</code>, <code onclick="insertLatex('a_n')">a_n</code></td><td style="text-align: center;">$x^2, a_n$</td></tr>
+                <tr><td>곱셈 / 나눗셈</td><td><code onclick="insertLatex('\\times')">\times</code>, <code onclick="insertLatex('\\div')">\div</code></td><td style="text-align: center;">$\times, \div$</td></tr>
+                <tr><td>제곱근/세제곱근</td><td><code onclick="insertLatex('\\sqrt{x}')">\sqrt{x}</code>, <code onclick="insertLatex('\\sqrt[3]{y}')">\sqrt[3]{y}</code></td><td style="text-align: center;">$\sqrt{x}, \sqrt[3]{y}$</td></tr>
+                <tr><td>조건부 함수</td><td><code onclick="insertLatex('f(x) = \\begin{cases} x & (x \\ge 0) \\\\ -x & (x < 0) \\end{cases}')">\begin{cases} ... \end{cases}</code></td><td style="text-align: center;">$f(x) = \begin{cases} x & (x \ge 0) \\ -x & (x < 0) \end{cases}$</td></tr>
+                <tr><td>2x2 행렬</td><td><code onclick="insertLatex('\\begin{pmatrix} a & b \\\\ c & d \\end{pmatrix}')">\begin{pmatrix} ... \end{pmatrix}</code></td><td style="text-align: center;">$\begin{pmatrix} a & b \\ c & d \end{pmatrix}$</td></tr>
+            </tbody>
+        </table>
+
+        <div class="latex-section-title">5. 지수·로그·삼각함수·미적분</div>
+        <table>
+            <thead><tr><th>기능</th><th>입력 코드 (클릭)</th><th style="text-align: center; width: 100px;">미리보기</th></tr></thead>
+            <tbody>
+                <tr><td>로그 / 자연로그</td><td><code onclick="insertLatex('\\log_a b')">\log_a b</code>, <code onclick="insertLatex('\\ln x')">\ln x</code></td><td style="text-align: center;">$\log_a b, \ln x$</td></tr>
+                <tr><td>삼각함수 / 도(도)</td><td><code onclick="insertLatex('\\sin \\theta')">\sin \theta</code>, <code onclick="insertLatex('90^\\circ')">90^\circ</code></td><td style="text-align: center;">$\sin \theta, 90^\circ$</td></tr>
+                <tr><td>시그마 / 무한대</td><td><code onclick="insertLatex('\\sum_{k=1}^n k')">\sum_{k=1}^n k</code>, <code onclick="insertLatex('\\infty')">\infty</code></td><td style="text-align: center;">$\sum_{k=1}^n k, \infty$</td></tr>
+                <tr><td>우극한 / 좌극한</td><td><code onclick="insertLatex('\\lim_{x \\to a^+}')">\lim_{x \to a^+}</code>, <code onclick="insertLatex('\\lim_{x \\to a^-}')">\lim_{x \to a^-}</code></td><td style="text-align: center;">$\lim_{x \to a^+}, \lim_{x \to a^-}$</td></tr>
+                <tr><td>극한 / 자연상수</td><td><code onclick="insertLatex('\\lim_{x \\to \\infty}')">\lim_{x \to \infty}</code>, <code onclick="insertLatex('e')">e</code></td><td style="text-align: center;">$\lim_{x \to \infty}, e$</td></tr>
+                <tr><td>미분 / 정적분</td><td><code onclick="insertLatex('f^{\\prime}(x)')">f^{\prime}(x)</code>, <code onclick="insertLatex('\\int_a^b')">\int_a^b</code></td><td style="text-align: center;">$f^{\prime}(x), \int_a^b$</td></tr>
+            </tbody>
+        </table>
+
+        <div class="latex-section-title">6. 확률과 통계 / 벡터</div>
+        <table>
+            <thead><tr><th>기능</th><th>입력 코드 (클릭)</th><th style="text-align: center; width: 100px;">미리보기</th></tr></thead>
+            <tbody>
+                <tr><td>순열 / 조합</td><td><code onclick="insertLatex('_n P_r')">_n P_r</code>, <code onclick="insertLatex('_n C_r')">_n C_r</code></td><td style="text-align: center;">$_n P_r, _n C_r$</td></tr>
+                <tr><td>조건부 확률</td><td><code onclick="insertLatex('P(B|A)')">P(B|A)</code></td><td style="text-align: center;">$P(B|A)$</td></tr>
+                <tr><td>정규분포/모비율</td><td><code onclick="insertLatex('N(m, \\sigma^2)')">N(m, \sigma^2)</code>, <code onclick="insertLatex('\\hat{p}')">\hat{p}</code></td><td style="text-align: center;">$N(m, \sigma^2), \hat{p}$</td></tr>
+                <tr><td>벡터크기 / 내적</td><td><code onclick="insertLatex('\\left| \\vec{a} \\right|')">\left| \vec{a} \right|</code>, <code onclick="insertLatex('\\vec{a} \\cdot \\vec{b}')">\vec{a} \cdot \vec{b}</code></td><td style="text-align: center;">$\left| \vec{a} \right|, \vec{a} \cdot \vec{b}$</td></tr>
+            </tbody>
+        </table>
+
+        <div class="latex-section-title">7. 물리학 (기호 및 단위)</div>
+        <table>
+            <thead><tr><th>기능</th><th>입력 코드 (클릭)</th><th style="text-align: center; width: 100px;">미리보기</th></tr></thead>
+            <tbody>
+                <tr><td>파장 / 밀도 / 일</td><td><code onclick="insertLatex('\\lambda')">\lambda</code>, <code onclick="insertLatex('\\rho')">\rho</code>, <code onclick="insertLatex('W')">W</code></td><td style="text-align: center;">$\lambda, \rho, W$</td></tr>
+                <tr><td>전압/저항(옴의법칙)</td><td><code onclick="insertLatex('V = IR')">V = IR</code>, <code onclick="insertLatex('\\Omega')">\Omega</code></td><td style="text-align: center;">$V = IR, \Omega$</td></tr>
+                <tr><td>가속도 / 역학적E</td><td><code onclick="insertLatex('F=ma')">F=ma</code>, <code onclick="insertLatex('E_k = \\frac{1}{2}mv^2')">E_k = ...</code></td><td style="text-align: center;">$F=ma, E_k = \frac{1}{2}mv^2$</td></tr>
+                <tr><td>광자E (플랑크)</td><td><code onclick="insertLatex('E = hf = \\frac{hc}{\\lambda}')">E = hf = \frac{hc}{\lambda}</code></td><td style="text-align: center;">$E = hf = \frac{hc}{\lambda}$</td></tr>
+                <tr><td>시간 미분 (도트)</td><td><code onclick="insertLatex('v = \\dot{x}')">v = \dot{x}</code>, <code onclick="insertLatex('a = \\ddot{x}')">a = \ddot{x}</code></td><td style="text-align: center;">$v = \dot{x}, a = \ddot{x}$</td></tr>
+            </tbody>
+        </table>
+
+        <div class="latex-section-title">8. 화학 (반응식 및 평형)</div>
+        <table>
+            <thead><tr><th>기능</th><th>입력 코드 (클릭)</th><th style="text-align: center; width: 100px;">미리보기</th></tr></thead>
+            <tbody>
+                <tr><td>화학반응 / 가열</td><td><code onclick="insertLatex('\\rightarrow')">\rightarrow</code>, <code onclick="insertLatex('\\xrightarrow{\\Delta}')">\xrightarrow{\Delta}</code></td><td style="text-align: center;">$\rightarrow, \xrightarrow{\Delta}$</td></tr>
+                <tr><td>가역/앙금/기체</td><td><code onclick="insertLatex('\\rightleftharpoons')">\rightleftharpoons</code>, <code onclick="insertLatex('\\downarrow')">\downarrow</code>, <code onclick="insertLatex('\\uparrow')">\uparrow</code></td><td style="text-align: center;">$\rightleftharpoons, \downarrow, \uparrow$</td></tr>
+                <tr><td>동위원소 표기</td><td><code onclick="insertLatex('{}_{6}^{14}\\text{C}')">{}_{6}^{14}\text{C}</code>, <code onclick="insertLatex('{}_{92}^{235}\\text{U}')">{}_{92}^{235}\text{U}</code></td><td style="text-align: center;">$ {}_{6}^{14}\text{C}, {}_{92}^{235}\text{U}$</td></tr>
+                <tr><td>이온 / 몰 농도</td><td><code onclick="insertLatex('\\text{Fe}^{3+}')">\text{Fe}^{3+}</code>, <code onclick="insertLatex('[\\text{H}^+]')">[\text{H}^+]</code></td><td style="text-align: center;">$\text{Fe}^{3+}, [\text{H}^+]$</td></tr>
+                <tr><td>엔탈피 / 표준상태</td><td><code onclick="insertLatex('\\Delta H^\\circ')">\Delta H^\circ</code>, <code onclick="insertLatex('\\text{pH}')">\text{pH}</code></td><td style="text-align: center;">$\Delta H^\circ, \text{pH}$</td></tr>
+            </tbody>
+        </table>
+
+        <div class="latex-section-title">9. 생명과학 (유전 및 분자)</div>
+        <table>
+            <thead><tr><th>기능</th><th>입력 코드 (클릭)</th><th style="text-align: center; width: 100px;">미리보기</th></tr></thead>
+            <tbody>
+                <tr><td>멘델 독립의 법칙</td><td><code onclick="insertLatex('P(AB) = P(A)P(B)')">P(AB) = P(A)P(B)</code></td><td style="text-align: center;">$P(AB) = P(A)P(B)$</td></tr>
+                <tr><td>카이제곱(유전통계)</td><td><code onclick="insertLatex('\\chi^2 = \\sum \\frac{(O-E)^2}{E}')">\chi^2 = \sum ...</code></td><td style="text-align: center;">$\chi^2 = \sum \frac{(O-E)^2}{E}$</td></tr>
+                <tr><td>유전형 교배식</td><td><code onclick="insertLatex('\\text{Aa} \\times \\text{aa} \\rightarrow \\text{F}_1')">\text{Aa} \times \text{aa} ...</code></td><td style="text-align: center;">$\text{Aa} \times \text{aa} \rightarrow \text{F}_1$</td></tr>
+                <tr><td>하디-바인베르크</td><td><code onclick="insertLatex('p^2 + 2pq + q^2 = 1')">p^2 + 2pq + q^2 = 1</code></td><td style="text-align: center;">$p^2 + 2pq + q^2 = 1$</td></tr>
+                <tr><td>DNA방향 / 수소결합</td><td><code onclick="insertLatex('5^\\prime \\rightarrow 3^\\prime')">5^\prime \rightarrow 3^\prime</code>, <code onclick="insertLatex('\\equiv')">\equiv</code></td><td style="text-align: center;">$5^\prime \rightarrow 3^\prime, \equiv$</td></tr>
+                <tr><td>수분 포텐셜</td><td><code onclick="insertLatex('\\Psi = \\Psi_s + \\Psi_p')">\Psi = \Psi_s + \Psi_p</code></td><td style="text-align: center;">$\Psi = \Psi_s + \Psi_p$</td></tr>
+            </tbody>
+        </table>
+
+        <div class="latex-section-title">10. 지구과학 (천체 / 지질)</div>
+        <table>
+            <thead><tr><th>기능</th><th>입력 코드 (클릭)</th><th style="text-align: center; width: 100px;">미리보기</th></tr></thead>
+            <tbody>
+                <tr><td>방사성 붕괴식</td><td><code onclick="insertLatex('N = N_0 \\left(\\frac{1}{2}\\right)^{\\frac{t}{T}}')">N = N_0 \left(\frac{1}{2}\right)^{\frac{t}{T}}</code></td><td style="text-align: center;">$N = N_0 \left(\frac{1}{2}\right)^{\frac{t}{T}}$</td></tr>
+                <tr><td>허블의 법칙</td><td><code onclick="insertLatex('v = H_0 d')">v = H_0 d</code></td><td style="text-align: center;">$v = H_0 d$</td></tr>
+                <tr><td>거리지수 (포그슨)</td><td><code onclick="insertLatex('m - M = 5 \\log d - 5')">m - M = 5 \log ...</code></td><td style="text-align: center;">$m - M = 5 \log d - 5$</td></tr>
+                <tr><td>슈테판-볼츠만</td><td><code onclick="insertLatex('L = 4\\pi R^2 \\sigma T^4')">L = 4\pi R^2 \sigma T^4</code></td><td style="text-align: center;">$L = 4\pi R^2 \sigma T^4$</td></tr>
+                <tr><td>태양 / 지구 기호</td><td><code onclick="insertLatex('\\odot')">\odot</code>, <code onclick="insertLatex('\\oplus')">\oplus</code></td><td style="text-align: center;">$\odot, \oplus$</td></tr>
+            </tbody>
+        </table>
+
+
+        </div>
+    </div>`;
+
+    // body 태그 맨 마지막에 안전하게 주입
+    document.body.insertAdjacentHTML('beforeend', latexHTML);
+}
+
 
 // ==========================================
 // 🚀 다단계 수행평가 자동 생성 기능 (Step-up Performance Maker)
