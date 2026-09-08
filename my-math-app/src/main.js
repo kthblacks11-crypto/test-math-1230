@@ -2228,7 +2228,6 @@ function getTodayDateString() {
 }
 
 // 3. 수업일지 팝업창 열기
-// 3. 수업일지 팝업창 열기 (과목별 맞춤 팁 적용)
 async function openJournalModal(code, desc) {
     currentJournalStdCode = code;
     document.getElementById('journal-std-code').innerText = code;
@@ -2238,25 +2237,34 @@ async function openJournalModal(code, desc) {
     document.getElementById('journal-title').value = '';
     document.getElementById('journal-content').value = '';
 
-    // ✨ 교과별 맞춤 팁 및 수식 입력기 가리기 로직
+    // 교과별 맞춤 팁 및 수식 입력기 가리기 로직
     const mathTip = document.getElementById('journal-math-tip');
     const tipText = document.getElementById('journal-tip-text');
     
-    // 수학 과목군 배열 (선생님 시스템의 수학 코드들)
+    // 수학 과목군 배열
     const mathSubjects = ['common1', 'common2', 'algebra', 'calculus1', 'calculus2', 'geometry', 'stats', 'ai-math'];
     
     if (mathSubjects.includes(currentSubject)) {
-        // 수학 과목일 때: 수식 안내 ON, 수학용 팁
         mathTip.style.display = 'block';
         tipText.innerHTML = "개념 설명 방식, 학생들의 자주 틀리는 오개념, 다음 시간 유의점 등을 기록하세요.";
     } else if (currentSubject === 'science' || currentSubject.includes('sci')) {
-        // 과학 관련 과목일 때: 수식 안내 OFF, 심화/면접용 팁
         mathTip.style.display = 'none';
         tipText.innerHTML = "단백질 구조 예측, 유전체 의학, 의료 윤리 등 심화 주제에 대한 학생들의 질문이나 토론 내용을 기록해 두면 의약학계열 진학 지도 시 훌륭한 자료가 됩니다.";
     } else {
-        // 그 외 과목일 때: 수식 안내 OFF, 기본 팁
         mathTip.style.display = 'none';
         tipText.innerHTML = "오늘 수업의 핵심, 학생들의 반응, 다음 시간 유의점 등을 기록하세요.";
+    }
+
+    // 💡 가장 확실한 해결책: 팁 안내 문구 바로 아래에 '도우미 열기 버튼'을 삽입합니다.
+    if (mathTip && !document.getElementById('invoke-latex-btn')) {
+        const btn = document.createElement('button');
+        btn.id = 'invoke-latex-btn';
+        btn.type = 'button';
+        btn.innerHTML = '🧮 수학·과학 수식 도우미 창 열기';
+        btn.style.cssText = "display: block; margin-top: 10px; background: #3b82f6; color: white; border: none; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.1);";
+        btn.onclick = () => toggleLatexHelper();
+        
+        mathTip.parentNode.insertBefore(btn, mathTip.nextSibling);
     }
 
     document.getElementById('journal-modal').style.display = 'flex';
@@ -9603,6 +9611,10 @@ window.toggleLatexHelper = function() {
         helperWin.style.display = 'flex';
         // 창이 처음 열릴 때 드래그 이벤트 활성화 초기화
         initLatexHelperDrag();
+        // ✨ [핵심 추가] 도우미 창이 열릴 때 MathJax에게 수식 렌더링 요청
+        if (window.MathJax) {
+            MathJax.typesetPromise([helperWin]).catch(err => console.error("수식 렌더링 에러:", err));
+        }
     } else {
         helperWin.style.display = 'none';
     }
@@ -9702,7 +9714,7 @@ function injectLatexHelperHTML() {
     if (document.getElementById('latex-floating-window')) return; // 이미 있으면 통과
 
     const latexHTML = String.raw`
-    <div id="latex-floating-window" class="latex-drg-window" style="width: 580px; display: none;"> 
+        <div id="latex-floating-window" class="latex-drg-window" style="width: 580px; display: none; position: fixed; top: 15%; left: 50%; transform: translateX(-50%); z-index: 99999; background: white; box-shadow: 0 10px 25px rgba(0,0,0,0.2); border-radius: 8px;">
         <div id="latex-floating-header" class="latex-drg-header">
             <span>📐 고등학교 수학·과학 LaTeX 문법 총정리 (완전판)</span>
             <button type="button" class="latex-drg-close" onclick="closeLatexHelper()">&times;</button>
