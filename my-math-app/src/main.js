@@ -329,6 +329,7 @@ let dragStartX = 0, dragStartY = 0;
 let initialBoxState = null;
 let lastBatchDiff = '상'; // 일괄넣기 난이도 기억용 변수
 
+
 function shuffleArray(array) {
     for (let i = array.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
