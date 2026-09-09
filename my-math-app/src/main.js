@@ -10237,6 +10237,10 @@ async function exportToGoogleDocs() {
     }
 }
 
+function downloadPerfAsWord() {
+    alert("📝 워드 문서 저장 기능은 현재 업데이트 준비 중입니다.");
+}
+
 // 기존 exposeToWindow 개체가 하단에 선언되어 있다면 아래 항목들을 매핑 추가해주세요.
 // toggleLatexHelper, closeLatexHelper, insertLatex
 
@@ -10282,7 +10286,7 @@ const exposeToWindow = {
     toggleLatexHelper, closeLatexHelper, insertLatex, runTweezerRepair,
     // 👇👇👇 여기에 새로운 수행평가 함수 3가지를 추가했습니다! 👇👇👇
     openPerformanceMaker, populatePerformanceStandards, executePerformanceGeneration, addPerfStandardSelect,
-    downloadPerfAsPDF, exportToGoogleDocs
+    downloadPerfAsPDF, exportToGoogleDocs, downloadPerfAsWord
 };
 
 for (const [fnName, fn] of Object.entries(exposeToWindow)) {
