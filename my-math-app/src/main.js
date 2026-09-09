@@ -312,6 +312,7 @@ async function handleDeleteAccount() {
 }
 
 let currentSubject = "common2";
+let commonPassages = [];
 let currentStandardCode = null;
 let currentLevelQ = 0;
 let currentQuestions = [];
@@ -4875,7 +4876,7 @@ function goToStep(stepNum) {
     // (1) 지문 데이터 완벽 비우기
     if (typeof commonPassages !== 'undefined') {
         commonPassages = [];
-        const container = document.getElementById('common-passage-list'); 
+        const container = document.getElementById('passage-thumbnails'); 
         if (container) container.innerHTML = '';
     }
 
@@ -8594,7 +8595,7 @@ function toggleAccordion(index) {
 // ==========================================
 // 📚 공통 지문 보관함 엔진 (국어/영어 장문 및 세트 문항 완벽 대응)
 // ==========================================
-var commonPassages = []; // 압축된 지문 이미지(Base64)들을 누적해서 담아둘 배열
+
 
 function toggleCommonPassageTray() {
     const tray = document.getElementById('common-passage-tray');
@@ -8630,7 +8631,7 @@ function clearAllPassages() {
         commonPassages = []; // 배열 싹 비우기
         
         // ⚠️ 지문 이미지가 담기는 HTML 컨테이너 ID를 선생님 코드에 맞게 수정해 주세요. (예: passage-list, common-passage-preview 등)
-        const container = document.getElementById('common-passage-list'); 
+        const container = document.getElementById('passage-thumbnails'); 
         if (container) {
             container.innerHTML = '';
         }
