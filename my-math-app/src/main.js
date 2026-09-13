@@ -3,7 +3,7 @@
 // 👑 시스템 관리자 및 권한 설정
 // ==========================================
 const ADMIN_EMAILS = [
-    'kthblacks11@gmail.com' // 선생님 아이디 (기본 관리자) 주의 이때, 콤마(,) 넣기
+    'kthblacks11@gmail.com', 'blacks9155@gmail.com', 'shs26_11011@g.cnees.kr' // 선생님 아이디 (기본 관리자) 주의 이때, 콤마(,) 넣기
     //'추가할선생님이메일@gmail.com' // 💡 필요시 이 란에 다른 선생님 이메일을 콤마로 연결하여 계속 추가하세요!
 ];
 
@@ -404,9 +404,16 @@ async function submitFeedback() {
 // ✨ 2. 관리자 의견 확인창을 렌더링하는 함수 (뱃지 초기화 기능 탑재)
 async function openAdminFeedback() {
     const user = auth.currentUser;
-    const adminEmail = "kthblacks11@gmail.com"; 
+    const adminEmails = [
+        "kthblacks11@gmail.com",
+        "blacks9155@gmail.com",
+        "shs26_11011@g.cnees.kr"
+    ];
     if (!user) { alert("먼저 구글 로그인을 해주세요."); return; }
-    if (user.email !== adminEmail) { alert("관리자 계정만 접근할 수 있습니다."); return; }
+    if (!adminEmails.includes(user.email)) { 
+        alert("관리자 계정만 접근할 수 있습니다."); 
+        return; 
+    }
 
     // 💡 [핵심 추가] 창을 열면 '마지막 확인 시간'을 갱신하고 뱃지를 숨김!
     localStorage.setItem('admin_last_checked_feedback', Date.now().toString());
@@ -2880,7 +2887,15 @@ async function checkLogin() {
 
 function openAdminMode() {
     const user = auth.currentUser;
-    if (user && user.email === "kthblacks11@gmail.com") {
+    // 관리자 이메일 목록
+    const adminEmails = [
+        "kthblacks11@gmail.com",
+        "blacks9155@gmail.com",
+        "shs26_11011@g.cnees.kr"
+    ];
+
+    // 로그인한 유저의 이메일이 관리자 목록에 포함되어 있는지 확인
+    if (user && adminEmails.includes(user.email)) {
         showSection('admin-dashboard');
     } else {
         alert("관리자만 접근 가능한 페이지입니다.");
