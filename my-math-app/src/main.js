@@ -594,7 +594,7 @@ function openAnalysisMode(mode) {
             <div style="padding: 12px; background: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0; font-size: 0.85rem; color: #334155;">
                 <div style="display: flex; align-items: flex-start; gap: 8px; margin-bottom: 8px;">
                     <strong style="white-space: nowrap;">[요약 분석 제공 내용]</strong>
-                    <span>문항별 과목, 단원명, 성취기준, 성취수준, 판정이유</span>
+                    <span>문항별 과목, 단원명, 성취기준, 성취수준, 판정이유, 단계별 문제풀이</span>
                 </div>
                 <div style="display: flex; align-items: center; gap: 4px; color: #e11d48; font-weight: bold; padding-top: 5px; border-top: 1px solid #e2e8f0;">
                     <span>⚠️ AI 분석은 오류 가능성이 있으므로 교사의 최종 검토가 필수입니다.</span>
@@ -1122,8 +1122,19 @@ async function executeAnalysis() {
         if (error.name === 'TypeError' && finalMsg.includes('Failed to fetch')) {
             finalMsg = "인터넷 연결이 불안정하거나 방화벽에 의해 차단되었습니다. 네트워크를 확인해주세요.";
         }
+
+        // 🌟 [UI 복구 추가] 에러 발생 시 숨겼던 캔버스와 버튼을 다시 살려내어 영역을 보여줍니다!
+        if (analysisMainMode === 'multi' && cropBoxes.length > 0) {
+            document.getElementById('multi-mode-ui').style.display = 'block';
+            document.getElementById('crop-canvas').style.display = 'block';
+            document.getElementById('analyze-multi-btn').style.display = 'block';
+            if (typeof drawOverlay === 'function') drawOverlay(); // 그려뒀던 박스 다시 그리기
+        } else if (analysisMainMode === 'single') {
+            document.getElementById('single-mode-ui').style.display = 'block';
+            document.getElementById('analyze-single-btn').style.display = 'block';
+        }
         
-        // 🌟 [유실 방지 핵심!] 선생님의 원본 '다시 분석하기' UI 렌더링 코드가 100% 보존되었습니다.
+        // 🌟 선생님의 원본 '다시 분석하기' UI 렌더링 코드 (유지)
         resultText.innerHTML = `<div style="padding: 15px; background-color: #fee2e2; border-left: 4px solid #ef4444; border-radius: 4px;">
             <p style="color: #b91c1c; font-weight: bold; margin: 0 0 10px 0;">🚨 분석 실패</p>
             <p style="margin: 0 0 15px 0; color: #7f1d1d;">${finalMsg}</p>
