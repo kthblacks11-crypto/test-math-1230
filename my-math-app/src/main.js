@@ -3,7 +3,7 @@
 // 👑 시스템 관리자 및 권한 설정
 // ==========================================
 const ADMIN_EMAILS = [
-    'kthblacks11@gmail.com', 'blacks9155@gmail.com', 'shs26_11011@g.cnees.kr' // 선생님 아이디 (기본 관리자) 주의 이때, 콤마(,) 넣기
+    'kthblacks11@gmail.com', 'blacks9155@gmail.com', 'shs26_11011@g.cnees.kr'  // 선생님 아이디 (기본 관리자) 주의 이때, 콤마(,) 넣기
     //'추가할선생님이메일@gmail.com' // 💡 필요시 이 란에 다른 선생님 이메일을 콤마로 연결하여 계속 추가하세요!
 ];
 
@@ -12,6 +12,9 @@ let currentUserGroup = 'math'; // 기본 교과군
 // ==========================================
 
 let currentEditingAssessmentIndex = -1;
+
+// 🌟 범용 비밀수첩 메모리 로드
+window.secretQuestions = JSON.parse(localStorage.getItem('all_secret_questions')) || [];
 
 const firebaseConfig = {
   apiKey: "AIzaSyD16bomCtDrDppZwDXKvInV9fvfww_qj00",
@@ -116,6 +119,10 @@ auth.onAuthStateChanged(async (user) => {
     const curriculumSelector = document.querySelector('.curriculum-selector'); // 상단 교과 탭
 
     if (user) {
+        // 🌟 로그인이 완벽히 확인된 안전한 시점에 DB 로딩 시작
+        if (!dbLoadPromise) {
+            dbLoadPromise = loadStandardsFromDB();
+        }
         if (!isDbLoaded && dbLoadPromise) {
             await dbLoadPromise;
         }
@@ -372,6 +379,21 @@ function saveApiKey() {
     }
 }
 
+// 🛠️ 교체 1: DB 변경 알림판(메타데이터) 갱신 도우미 (V8 문법 적용 및 window.db 에러 해결)
+async function markSubjectAsUpdated(subjectCode) {
+    if (!subjectCode || subjectCode === 'uncategorized') return 0;
+    try {
+        const now = Date.now();
+        await db.collection('system_metadata').doc('subject_updates').set({
+            [subjectCode]: now 
+        }, { merge: true });
+        return now; // 💡 갱신된 시간을 반환
+    } catch (e) {
+        console.warn("메타데이터 업데이트 실패:", e);
+        return 0;
+    }
+}
+
 async function submitFeedback() {
     const text = document.getElementById('feedback-message').value.trim();
     if(!text) { alert("의견을 입력해주세요!"); return; }
@@ -404,7 +426,7 @@ async function submitFeedback() {
 // ✨ 2. 관리자 의견 확인창을 렌더링하는 함수 (뱃지 초기화 기능 탑재)
 async function openAdminFeedback() {
     const user = auth.currentUser;
-    const adminEmails = [
+        const adminEmails = [
         "kthblacks11@gmail.com",
         "blacks9155@gmail.com",
         "shs26_11011@g.cnees.kr"
@@ -1006,14 +1028,17 @@ async function executeAnalysis() {
         }
         
         // [원래 렌더링 유지] 1. 텍스트 및 HTML DOM 렌더링
+        // ... (앞부분 API 호출 로직은 동일하게 유지) ...
+        
         if (isSingleMode) {
             renderSophisticatedResult(analysisText, lastAnalyzedSingleImage);
             
-            // 🌟 [자동 저장 - 단일 상세 분석] 파싱 후 즉시 트리거 실행
             const qTxtMatch = analysisText.match(/(?:\[원본 문제 추출\]:?)([\s\S]*?)(?=\[교과|$)/);
             const stdMatch = analysisText.match(/(?:성취기준:?\s*\[?)([^\]\n\s,]+)/);
             const lvMatch = analysisText.match(/(?:성취수준:?\s*)([A-E]\+?)/);
             const rsMatch = analysisText.match(/(?:판정 이유:?\s*)([\s\S]*?)(?=\[핵심|$)/);
+            // 💡 [추가] 상세 풀이 추출
+            const ansMatch = analysisText.match(/(?:\[상세 풀이\]:?)([\s\S]*?)(?=$)/); 
 
             let pureQ = qTxtMatch ? qTxtMatch[1].trim() : "단일 문항 추출 실패";
             let rawCodes = "";
@@ -1023,9 +1048,10 @@ async function executeAnalysis() {
 
             let pureLv = lvMatch ? lvMatch[1].trim() : "C";
             let pureRs = rsMatch ? rsMatch[1].trim() : "자동 수집된 평가 세부 내역";
+            let pureAns = ansMatch ? ansMatch[1].trim() : "상세 풀이 및 분석 리포트 내용 참조";
 
-            // 💡 [핵심 복구] 마지막 파라미터로 commonPassages(지문 이미지 배열)를 던져주어 100% 유실 없이 저장되게 합니다.
-            await saveAnalysisAutomatically(pureQ, rawCodes || "미분류", pureLv, pureRs, lastAnalyzedSingleImage, commonPassages);
+            // 💡 [수정] 파라미터에 pureAns 추가
+            await saveAnalysisAutomatically(pureQ, rawCodes || "미분류", pureLv, pureRs, pureAns, lastAnalyzedSingleImage, commonPassages);
             
         } else {
             let rawText = analysisText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br>');
@@ -1047,25 +1073,29 @@ async function executeAnalysis() {
 
             resultText.innerHTML = `<div style="background: white; padding: 1.5rem; border-radius: 12px; border: 1px solid var(--border); line-height: 1.8;">${rawText}</div>`;
 
-            // 🌟 [자동 저장 - 다중 요약 분석] 루프 파싱 연동 트리거 실행
             const blocks = analysisText.split(/\[문항\s*\d+\]/).map(b => b.trim()).filter(b => b.length > 10);
             for(let i = 0; i < blocks.length; i++) {
                 let block = blocks[i];
                 let qTxtM = block.match(/(?:0\.\s*문제 텍스트\s*:?)([\s\S]*?)(?=1\.\s*문항|$)/);
                 let stdM = block.match(/(?:3\.\s*관련 성취기준\s*:?)([^\n]+)/);
                 let lvM = block.match(/(?:4\.\s*성취수준\s*:?)\s*([A-E]\+?)/);
-                let rsM = block.match(/(?:판정 이유\s*:?)([\s\S]*?)(?=$)/);
+                // 💡 [수정] 5번 항목 전까지만 판정 이유로 자르기
+                let rsM = block.match(/(?:판정 이유\s*:?)([\s\S]*?)(?=5\.\s*단계별|(?=$))/); 
+                // 💡 [추가] 5번 항목을 정답으로 추출
+                let ansM = block.match(/(?:5\.\s*단계별 문제풀이 및 정답\s*:?)([\s\S]*?)(?=$)/);
 
                 let subQ = qTxtM ? qTxtM[1].trim() : "요약 분석 문제 텍스트";
                 let subStd = stdM ? stdM[1].trim() : "미분류";
                 let subLv = lvM ? lvM[1].trim() : "C";
                 let subRs = rsM ? rsM[1].trim() : "요약 판정 근거 데이터";
+                let subAns = ansM ? ansM[1].trim() : "상세 풀이 및 분석 리포트 내용 참조";
                 let subImg = cropBoxes[i] ? getCroppedBase64(cropBoxes[i]) : null;
 
-                // 💡 [핵심 복구] 마지막 파라미터로 commonPassages(지문 이미지 배열)를 함께 전달합니다.
-                await saveAnalysisAutomatically(subQ, subStd, subLv, subRs, subImg, commonPassages);
+                // 💡 [수정] 파라미터에 subAns 추가
+                await saveAnalysisAutomatically(subQ, subStd, subLv, subRs, subAns, subImg, commonPassages);
             }
         }
+        // ... (이후 렌더링 코드는 동일) ...
 
         // 💡 2. [추가된 부분] HTML이 DOM에 삽입된 직후 Mermaid를 초기화하여 그립니다.
         if (window.mermaid) {
@@ -1105,15 +1135,14 @@ async function executeAnalysis() {
 // =========================================================================
 // 🌟[업그레이드] 자동 저장 시스템 엔진 (공통 지문 텍스트 & 다중 이미지 완벽 지원)
 // =========================================================================
-async function saveAnalysisAutomatically(extractedText, rawCodesStr, levelStr, reasonStr, mainImageBase64, passageImagesArray = [], passageText = "") {
+// 💡 파라미터 5번째 자리에 answerStr 추가
+async function saveAnalysisAutomatically(extractedText, rawCodesStr, levelStr, reasonStr, answerStr, mainImageBase64, passageImagesArray = [], passageText = "") {
     try {
         const currentUserEmail = auth.currentUser ? auth.currentUser.email : "알 수 없음";
         const currentUserNickname = auth.currentUser ? (auth.currentUser.displayName || "선생님") : "알 수 없음";
         
-        // 💡 [핵심 보완 1] 지문 텍스트가 따로 들어오면 문제 텍스트와 완벽하게 하나로 합칩니다.
         const fullTextToSave = passageText ? `[공통지문]\n${passageText}\n\n[문항]\n${extractedText}` : extractedText;
 
-        // 💡 [핵심 보완 2] 메인 문제 이미지 1개 + 공통 지문 이미지 N개를 모두 project_images 서랍에 개별 저장하고 열쇠(ID)들을 모읍니다.
         let allImageIds = [];
         let imagesToUpload = [];
         
@@ -1135,23 +1164,21 @@ async function saveAnalysisAutomatically(extractedText, rawCodesStr, levelStr, r
             } catch (err) { console.warn("🚨 [이미지 서랍] 저장 실패:", err); }
         }
 
-        // 2단계: project_texts 서랍에 '새로운 개별 문서'로 적재 (프로젝트 유무 상관없음)
         try {
             await db.collection('project_texts').add({
                 source: "auto_ai_mirroring",
                 projectId: (typeof currentProjectId !== 'undefined' && currentProjectId) ? currentProjectId : "unassigned",
                 ownerEmail: currentUserEmail,
                 userNickname: currentUserNickname,
-                questionText: fullTextToSave, // 지문이 포함된 완성형 텍스트
+                questionText: fullTextToSave,
                 reasonText: reasonStr,
                 level: levelStr,
                 standardCodes: rawCodesStr,
-                imageIds: allImageIds, // 배열 형태로 여러 개의 이미지 열쇠 보관
+                imageIds: allImageIds,
                 timestamp: firebase.firestore.FieldValue.serverTimestamp()
             });
         } catch (err) { console.warn("🚨 [텍스트 서랍] 자동 미러링 실패:", err); }
 
-        // 3단계: 융합 성취기준 코드를 찢어서 각각 개별 문서로 은행(transformed_bank)에 저장
         const cleanCodes = rawCodesStr.replace(/[\[\]\s]/g, '').split(',').filter(c => c.length > 0);
         const finalCleanLevel = levelStr.replace('+', '').trim();
 
@@ -1169,11 +1196,11 @@ async function saveAnalysisAutomatically(extractedText, rawCodesStr, levelStr, r
             }
             if (!matchedSubject) matchedSubject = 'uncategorized';
 
-            // 문항 은행에 공통 지문이 포함된 문제로 예쁘게 안착
+            // 🌟 덮어쓰기 구간: 문항 은행에 저장할 때 answerStr 주입
             await db.collection('transformed_bank').add({
-                answer: "상세 풀이 및 분석 리포트 내용 참조",
+                answer: answerStr, // 👈 기존의 "상세 풀이 및 분석 리포트 내용 참조" 하드코딩 제거
                 level: finalCleanLevel || "C",
-                question: fullTextToSave, // 지문 + 문제 텍스트
+                question: fullTextToSave,
                 reason: reasonStr,
                 standard_code: singleCode,
                 subject: matchedSubject,
@@ -1182,6 +1209,11 @@ async function saveAnalysisAutomatically(extractedText, rawCodesStr, levelStr, r
                 user_nickname: currentUserNickname
             });
         }
+        
+        if (typeof markSubjectAsUpdated === 'function') {
+            await markSubjectAsUpdated(matchedSubject);
+        }
+        
         console.log(`✨ [자동 동시 저장 완료] 성취기준 대상: ${cleanCodes.join(', ')}`);
     } catch (e) {
         console.warn("🚨 백그라운드 자동 미러링 트랜잭션 실패:", e);
@@ -1407,6 +1439,10 @@ async function processAndSaveBackground(analysisText, apiKey, isRetry = false) {
                 user_email: currentUserEmail,
                 user_nickname: currentUserNickname 
             });
+            // ✨ [추가] 백그라운드 변형 문항이 저장되었으므로 알림판 갱신!
+            if (typeof markSubjectAsUpdated === 'function') {
+                await markSubjectAsUpdated(matchedSubject);
+            }
         }
 
         console.log("✅ 문항 분석 결과 및 변형 문항이 성공적으로 분리 저장되었습니다.");
@@ -1656,57 +1692,120 @@ async function changeSubject() {
         subTitleEl.innerText = "이 과목의 성취기준 데이터가 아직 등록되지 않았습니다.";
     }
     
-    // 2. 버튼 비활성화를 위한 문항 개수 계산 (🌟 수첩 캐시 적용!)
+    // 🌟 2. DB 전체 다운로드 대신 비밀수첩에서 '0초' 만에 개수 세기 (할당량 폭발 차단)
+    updateCountsFromSecretNotebook();
+
+    // 🌟 3. [핵심] 3가지 화면 모두 즉시 새로고침 (선생님 코드 100% 유지)
+    initDashboard(); 
+    if (typeof initChecklist === 'function') initChecklist(); 
+    if (typeof populatePerformanceStandards === 'function') populatePerformanceStandards();
+
+    const perfSubjNameEl = document.getElementById('perf-subject-name');
+    if (perfSubjNameEl && data) perfSubjNameEl.innerText = data.title;
+
+    if (document.getElementById('quiz-standard-selection')) document.getElementById('quiz-standard-selection').style.display = 'block';
+    if (document.getElementById('quiz-level-matching')) document.getElementById('quiz-level-matching').style.display = 'none';
+
+    // 🌟 4. 백그라운드에서 서버와 개수를 단 1회 비교하여 최신화 여부 결정
+    syncWithDatabaseSilently();
+}
+
+// 🛠️ 새로 추가: 수첩에서 개수 세기 도우미
+function updateCountsFromSecretNotebook() {
+    currentSubjectQCount = {};
     if (currentSubject && currentSubject !== 'uncategorized') {
-        if (cachedSubjectQCounts[currentSubject]) {
-            currentSubjectQCount = cachedSubjectQCounts[currentSubject];
-        } else {
-            currentSubjectQCount = {};
-            try {
-                const snapshot = await db.collection('transformed_bank').where('subject', '==', currentSubject).get();
-                snapshot.forEach(doc => {
-                    const stdCodes = doc.data().standard_code;
-                    if (Array.isArray(stdCodes)) {
-                        stdCodes.forEach(code => {
-                            if (code && code !== "unknown" && code !== "코드없음") {
-                                const cleanCode = code.replace(/[\[\]\s]/g, '');
-                                currentSubjectQCount[cleanCode] = (currentSubjectQCount[cleanCode] || 0) + 1;
-                            }
-                        });
-                    } 
-                    else if (typeof stdCodes === 'string') {
-                        if (stdCodes && stdCodes !== "unknown" && stdCodes !== "코드없음") {
-                            const cleanCode = stdCodes.replace(/[\[\]\s]/g, '');
+        window.secretQuestions.forEach(q => {
+            if (q.subject === currentSubject) {
+                const stdCodes = q.standard_code;
+                if (Array.isArray(stdCodes)) {
+                    stdCodes.forEach(code => {
+                        if (code && code !== "unknown" && code !== "코드없음") {
+                            const cleanCode = code.replace(/[\[\]\s]/g, '');
                             currentSubjectQCount[cleanCode] = (currentSubjectQCount[cleanCode] || 0) + 1;
+                        }
+                    });
+                } else if (typeof stdCodes === 'string') {
+                    if (stdCodes && stdCodes !== "unknown" && stdCodes !== "코드없음") {
+                        const cleanCode = stdCodes.replace(/[\[\]\s]/g, '');
+                        currentSubjectQCount[cleanCode] = (currentSubjectQCount[cleanCode] || 0) + 1;
+                    }
+                }
+            }
+        });
+    }
+}
+
+
+// 🛠️ 교체 2: 궁극의 핀셋 데이터 동기화 도우미 (V8 문법 + 기존 데이터 증발 방지 로직 적용)
+async function syncWithDatabaseSilently() {
+    if (!currentSubject || currentSubject === 'uncategorized') return;
+
+    try {
+        // 1. 단 1 Read: 해당 과목의 마지막 업데이트 시간(알림판) 확인
+        const metaRef = db.collection('system_metadata').doc('subject_updates');
+        const metaDoc = await metaRef.get();
+        const serverTime = metaDoc.exists ? (metaDoc.data()[currentSubject] || 0) : 0;
+        
+        const localTime = parseInt(localStorage.getItem(`sync_time_${currentSubject}`) || "0");
+
+        // 2. 서버 시간이 로컬보다 최신인 경우에만 핀셋 동기화 시작
+        if (serverTime > localTime || localTime === 0) {
+            console.log(`🔄 [버전 감지] ${currentSubject} 핀셋 동기화 진행...`);
+            
+            if (localTime === 0) {
+                // 🌟 2-A. 최초 접속: DB 쿼리에서 isDeleted를 거르지 않고 모두 가져온 뒤 JS에서 거름 (기존 데이터 증발 방지 핵심)
+                const snapshot = await db.collection('transformed_bank')
+                                         .where('subject', '==', currentSubject)
+                                         .get();
+                
+                const freshQuestions = [];
+                snapshot.forEach(doc => {
+                    const data = doc.data();
+                    // JS 단에서 가짜 삭제된 문항만 제외 (필드가 아예 없는 과거 데이터 완벽 보존)
+                    if (data.isDeleted !== true) {
+                        freshQuestions.push({ id: doc.id, ...data });
+                    }
+                });
+                
+                window.secretQuestions = window.secretQuestions.filter(q => q.subject !== currentSubject);
+                window.secretQuestions = [...window.secretQuestions, ...freshQuestions];
+            } else {
+                // 🌟 2-B. 핀셋 로직: "내가 마지막으로 본 시간 이후에 수정/삭제된 것만 줘!"
+                const lastSyncDate = new Date(localTime);
+                const snapshot = await db.collection('transformed_bank')
+                                         .where('subject', '==', currentSubject)
+                                         .where('timestamp', '>', lastSyncDate)
+                                         .get();
+                
+                snapshot.forEach(doc => {
+                    const data = doc.data();
+                    const idx = window.secretQuestions.findIndex(q => q.id === doc.id);
+                    
+                    if (data.isDeleted === true) {
+                        // 🗑️ 지워진 문항이면 수첩에서 빼기
+                        if (idx !== -1) window.secretQuestions.splice(idx, 1);
+                    } else {
+                        // ✍️ 새로 추가됐거나 수정된 문항이면 덮어쓰거나 끼워넣기
+                        if (idx !== -1) {
+                            window.secretQuestions[idx] = { id: doc.id, ...data };
+                        } else {
+                            window.secretQuestions.push({ id: doc.id, ...data });
                         }
                     }
                 });
-                cachedSubjectQCounts[currentSubject] = currentSubjectQCount;
-            } catch(e) { console.warn("문항 수 계산 실패", e); }
+            }
+
+            // 3. 수첩 저장 및 시간 갱신
+            localStorage.setItem('all_secret_questions', JSON.stringify(window.secretQuestions));
+            localStorage.setItem(`sync_time_${currentSubject}`, serverTime.toString());
+
+            // 4. 화면 즉시 새로고침
+            updateCountsFromSecretNotebook();
+            initDashboard();
         }
-    } else {
-        currentSubjectQCount = {};
+    } catch (e) {
+        console.warn("백그라운드 동기화 실패:", e);
     }
-
-    // 🌟 3. [핵심] 3가지 화면 모두 즉시 새로고침
-    initDashboard(); 
-    if (typeof initChecklist === 'function') initChecklist(); 
-
-    // ✨👇 [여기에 딱 3줄만 추가했습니다!] 과목이 바뀌면 수행평가 드롭다운도 즉시 갱신 👇✨
-    if (typeof populatePerformanceStandards === 'function') {
-        populatePerformanceStandards();
-    }
-
-    // ✨👇 [여기에 딱 4줄만 추가했습니다!] 수행평가 탭의 보라색 과목 이름도 즉시 업데이트! 👇✨
-    const perfSubjNameEl = document.getElementById('perf-subject-name');
-    if (perfSubjNameEl && data) {
-        perfSubjNameEl.innerText = data.title;
-    }
-    // 🚫 [핵심 수정 1] 여기서 loadBookmark()를 호출하던 것을 삭제했습니다. (유지됨)
-
-    // 👇 [여기에 3줄 추가] 과목을 바꾸면 무조건 초기 화면으로 강제 이동 및 퀴즈 상자 닫기 (유지됨)
-    if (document.getElementById('quiz-standard-selection')) document.getElementById('quiz-standard-selection').style.display = 'block';
-    if (document.getElementById('quiz-level-matching')) document.getElementById('quiz-level-matching').style.display = 'none';
 }
 
 function initDashboard() {
@@ -1828,18 +1927,23 @@ async function startLevelMatching(code) {
     const standard = subjectData[currentSubject].standards.find(s => s.code === code);
     
     let combinedQuestions = standard.questions ? [...standard.questions] : []; 
+    let cleanInputCode = code.replace(/[\[\]\s]/g, '');
 
-    try {
-        let cleanInputCode = code.replace(/[\[\]\s]/g, '');
-        // 💡 배열 내 포함 여부를 검사하는 array-contains 활용
-        const snapshot = await db.collection('transformed_bank')
-         .where('standard_code', 'array-contains', cleanInputCode)
-         .get();
-         
-        snapshot.forEach(doc => {
-            const data = doc.data();
+    // 🌟 DB 통신(get) 코드를 걷어내고 검증된 수첩에서 꺼냅니다. (할당량 완벽 방어)
+    window.secretQuestions.forEach(data => {
+        const stdCodes = data.standard_code;
+        let isMatched = false;
+        
+        // 선생님의 기존 array-contains 필터링을 JS로 완벽히 재현
+        if (Array.isArray(stdCodes)) {
+            isMatched = stdCodes.some(c => c && c.replace(/[\[\]\s]/g, '') === cleanInputCode);
+        } else if (typeof stdCodes === 'string') {
+            isMatched = stdCodes.replace(/[\[\]\s]/g, '') === cleanInputCode;
+        }
+
+        if (isMatched) {
+            // 선생님이 구현하신 파싱 및 뱃지 로직 100% 유지
             let extractedLevel = data.level || data.original_analysis?.match(/성취수준:\s*([A-E])/)?.[1] || "C"; 
-            
             let extractedReason = data.reason || data.original_analysis?.match(/판정 이유:\s*([\s\S]*?)(?=\n\[|$)/)?.[1]?.trim() || "사용자가 업로드한 문항을 AI가 분석하고 변형한 실전 문항입니다.";
         
             let sourceBadge = data.source === "선생님 직접 등록"
@@ -1850,24 +1954,23 @@ async function startLevelMatching(code) {
                        <span style="font-size: 0.8rem; color: #166534; font-weight: bold;">💡 AI 변형 추가 문항</span>
                    </div>`;
         
-            // 💡 [핵심 추가] 문제 텍스트에 포함된 마크다운 SVG 코드를 진짜 그림 태그로 변환하기
             let pureQuestion = data.question || data.q || "문제 내용이 없습니다.";
-
             let imgHtml = data.image ? `<br><img src="${data.image}" style="max-width:100%; margin-top:15px; border-radius:8px; border:1px solid #cbd5e1; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">` : "";
             let displayCode = Array.isArray(data.standard_code) ? data.standard_code.join(', ') : (data.standard_code || "unknown");
             
             combinedQuestions.push({
-                id: doc.id,
-                q: sourceBadge + pureQuestion, // 💡 변환된 pureQuestion을 넣어줍니다!
+                id: data.id || Date.now().toString(),
+                q: sourceBadge + pureQuestion, 
                 level: extractedLevel,
                 reason: extractedReason,
                 answer: data.answer || "정답 정보 없음",
-                standard_code: displayCode, // 💡 변환된 코드를 넣어줍니다!
+                standard_code: displayCode, 
                 image: data.image || data.imageUrl || data.img 
             });
-        });
-    } catch (error) { console.warn("DB 로드 실패"); }
+        }
+    });
 
+    // 🌟 화면 렌더링 파트는 선생님 코드 단 1줄도 수정 없이 원형 보존
     currentQuestions = shuffleArray(combinedQuestions);
     document.getElementById('quiz-standard-selection').style.display = 'none';
     document.getElementById('quiz-level-matching').style.display = 'block';
@@ -2866,8 +2969,8 @@ async function loadStandardsFromDB() {
     }
 }
 
-// 💡 스크립트가 읽히자마자 즉시 DB 다운로드를 시작하고, 그 약속(Promise)을 보관합니다.
-dbLoadPromise = loadStandardsFromDB();
+
+
 
 
 
@@ -2984,8 +3087,8 @@ async function saveQuestionToDB() {
     }
 
     try {
-        // 🌟 통합 서랍(transformed_bank)에 직접 저장
-        await db.collection('transformed_bank').add({
+        // 🌟 통합 서랍(transformed_bank)에 직접 저장 후 ID 획득
+        const newDocRef = await db.collection('transformed_bank').add({
             subject: subject,
             standard_code: [stdCode.replace(/[\[\]\s]/g, '')],
             question: qText,
@@ -2995,13 +3098,34 @@ async function saveQuestionToDB() {
             source: "선생님 직접 등록",
             timestamp: firebase.firestore.FieldValue.serverTimestamp()
         });
+        
+        // ✨ [핵심] 내 비밀수첩에 0초 만에 직접 밀어 넣기 (Optimistic UI)
+        window.secretQuestions.push({
+            id: newDocRef.id,
+            subject: subject,
+            standard_code: [stdCode.replace(/[\[\]\s]/g, '')],
+            question: qText,
+            answer: qAnswer || "정답 정보 없음",
+            level: qLevel,
+            reason: qReason,
+            source: "선생님 직접 등록"
+        });
+        localStorage.setItem('all_secret_questions', JSON.stringify(window.secretQuestions));
+
+        // ✨ 메타데이터 버전 최신화
+        await markSubjectAsUpdated(subject);
+        localStorage.setItem(`sync_time_${subject}`, Date.now().toString()); // 내 수첩 시간도 즉시 일치시킴
+
         alert("✨ 문항이 통합 서랍에 성공적으로 저장되었습니다!");
         
-        await updateQuestionCount();
-        // 입력창 비우기
+        // 화면 즉시 갱신 (DB 재접속 없음)
+        updateCountsFromSecretNotebook();
+        initDashboard();
+        
         document.getElementById('admin-q-text').value = '';
         document.getElementById('admin-q-answer').value = '';
         document.getElementById('admin-q-reason').value = '';
+    
     } catch (error) {
         alert("저장 실패: " + error.message);
     }
@@ -3022,7 +3146,7 @@ let lastBookmarkSubject = null;
 
 // 🟢 실시간 감시(onSnapshot)를 끄고 1회성 읽기(get) 및 메모리 캐싱으로 데이터를 획기적으로 절약한 북마크 로직
 async function loadBookmark(level) {
-    // ✨ 1. 모든 버튼을 살짝 투명하게 만들고 크기를 원래대로 되돌림 (선생님 코드 100% 유지)
+    // ✨ 1. 상단 버튼 UI 효과 (선생님 코드 100% 유지)
     ['A', 'B', 'C', 'D', 'E'].forEach(l => {
         const btn = document.getElementById(`bm-btn-${l}`);
         if (btn) {
@@ -3033,7 +3157,6 @@ async function loadBookmark(level) {
         }
     });
 
-    // ✨ 2. 방금 클릭한 버튼만 뚜렷하게, 크고, 진한 테두리로 강조 (선생님 코드 100% 유지)
     const activeBtn = document.getElementById(`bm-btn-${level}`);
     if (activeBtn) {
         activeBtn.style.opacity = '1';
@@ -3046,33 +3169,17 @@ async function loadBookmark(level) {
     const listContainer = document.getElementById('bookmark-list');
 
     try {
-        currentBookmarkQuestions = []; // 배열 초기화
+        currentBookmarkQuestions = []; 
 
-        // 🚨 [핵심 변경 1] 과목이 바뀌었거나 처음 누를 때만 딱 1번 DB에서 다운로드합니다! (비용 절감)
-        if (lastBookmarkSubject !== subject || !cachedBookmarkData) {
-            listContainer.innerHTML = "<p style='text-align:center; color:var(--primary); font-weight:bold;'>데이터베이스에서 문항을 최초 1회 불러오는 중입니다... ⏳</p>";
-            
-            let query;
-            if (subject === "uncategorized") {
-                query = db.collection('transformed_bank').get(); 
-            } else {
-                query = db.collection('transformed_bank').where('subject', '==', subject).get();
-            }
-
-            // DB에서 데이터를 딱 1번만 가져옵니다.
-            const snapshot = await query;
-            
-            // 가져온 데이터를 수첩(cachedBookmarkData)에 모두 적어둡니다.
-            cachedBookmarkData = [];
-            snapshot.forEach(doc => cachedBookmarkData.push(doc.data()));
-            lastBookmarkSubject = subject; // 현재 과목 기억
+        // 🚨 DB 무거운 다운로드를 삭제하고 비밀수첩에서 즉시 꺼냅니다.
+        let cachedBookmarkData = [];
+        if (subject === "uncategorized") {
+            cachedBookmarkData = window.secretQuestions; 
+        } else {
+            cachedBookmarkData = window.secretQuestions.filter(q => q.subject === subject);
         }
 
-        // ==========================================================
-        // 🚨 이제부터는 DB를 부르지 않고 수첩(cachedBookmarkData)에서 필터링합니다!
-        // ==========================================================
-
-        // 🌟 [선생님 로직 1] 선생님 수동 문항 담기 (일반 과목일 때만)
+        // 🌟 [선생님 로직 1] 선생님 수동 문항 담기 (선생님 원본 유지)
         if (subject !== "uncategorized") {
             const data = subjectData[subject];
             if (data && data.standards) {
@@ -3094,11 +3201,10 @@ async function loadBookmark(level) {
             }
         }
 
-        // 🌟 [선생님 로직 2] 수첩 데이터 분류해서 담기 (기존 코드 100% 동일)
+        // 🌟 [선생님 로직 2] 수첩 데이터 분류해서 담기 (선생님 원본 100% 유지)
         cachedBookmarkData.forEach(d => {
             let extractedLevel = d.level || d.original_analysis?.match(/성취수준:\s*([A-E])/)?.[1];
             
-            // 미분류 탭 전용 로직
             if (subject === "uncategorized") {
                 if (extractedLevel === level && (d.standard_code === "unknown" || d.standard_code === "코드없음")) {
                     const aiSubjectMatch = d.original_analysis?.match(/AI 판단 과목:\s*([^\n]+)/);
@@ -3112,39 +3218,33 @@ async function loadBookmark(level) {
                         source: "✨ AI 분석 문항"
                     });
                 }
-            } 
-            // 일반 과목 전용 로직 (이미지 경고문 포함)
-            // 일반 과목 전용 로직 (이미지 경고문 포함)
-            else {
-                // 배열인지 확인하여 조건 검사
+            } else {
                 let isUnknown = false;
                 let displayCode = "";
                 if (Array.isArray(d.standard_code)) {
                     isUnknown = d.standard_code.includes("unknown") || d.standard_code.includes("코드없음");
-                    displayCode = d.standard_code.map(c => `[${c}]`).join(', '); // 여러 코드가 예쁘게 출력됨
+                    displayCode = d.standard_code.map(c => `[${c}]`).join(', '); 
                 } else {
                     isUnknown = d.standard_code === "unknown" || d.standard_code === "코드없음";
                     displayCode = `[${d.standard_code}]`;
                 }
 
                 if (extractedLevel === level && !isUnknown) {
-                let qImg = d.image || d.imageUrl || d.img;
-                
-                // 💡 누락되었던 이미지 HTML 생성 로직 추가
-                let bookmarkImgHtml = "";
-                if (qImg) {
-                    bookmarkImgHtml = `<br><img src="${qImg}" style="max-width:100%; margin-top:15px; border-radius:8px; border:1px solid #cbd5e1; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">`;
+                    let qImg = d.image || d.imageUrl || d.img;
+                    let bookmarkImgHtml = "";
+                    if (qImg) {
+                        bookmarkImgHtml = `<br><img src="${qImg}" style="max-width:100%; margin-top:15px; border-radius:8px; border:1px solid #cbd5e1; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">`;
+                    }
+                    
+                    currentBookmarkQuestions.push({
+                        code: displayCode, 
+                        q: d.question || d.q || "문제 내용이 없습니다.", 
+                        imgHtml: bookmarkImgHtml,
+                        reason: d.reason || "AI가 원본을 분석하고 변형하며 판정한 문항입니다.",
+                        answer: d.answer || "등록된 정답/풀이가 없습니다.", 
+                        source: d.source || "✨ AI 추가 문항"
+                    });
                 }
-                
-                currentBookmarkQuestions.push({
-                    code: displayCode, // 💡 배열로 바뀐 코드를 화면에 출력
-                    q: d.question || d.q || "문제 내용이 없습니다.", 
-                    imgHtml: bookmarkImgHtml,
-                    reason: d.reason || "AI가 원본을 분석하고 변형하며 판정한 문항입니다.",
-                    answer: d.answer || "등록된 정답/풀이가 없습니다.", 
-                    source: d.source || "✨ AI 추가 문항"
-                });
-            }
             }
         });
         
@@ -3153,7 +3253,7 @@ async function loadBookmark(level) {
         renderBookmarkList(level); 
 
     } catch (err) {
-        console.error("DB 로드 에러:", err);
+        console.error("수첩 로드 에러:", err);
         listContainer.innerHTML = "<p style='color:red; text-align:center;'>문항 로딩에 실패했습니다.</p>";
     }
 }
@@ -4509,33 +4609,61 @@ async function updateQuestionInDB() {
     if (confirm("문항 내용을 수정하시겠습니까?")) {
         try {
             await db.collection('transformed_bank').doc(qDocId).update(updatedData);
+            
+            // ✨ [핵심] 수첩에서 해당 문항을 찾아 내용 덮어쓰기
+            const targetIdx = window.secretQuestions.findIndex(q => q.id === qDocId);
+            let targetSubject = currentSubject; // 과목명 임시 기억
+            
+            if (targetIdx !== -1) {
+                targetSubject = window.secretQuestions[targetIdx].subject;
+                window.secretQuestions[targetIdx] = { ...window.secretQuestions[targetIdx], ...updatedData };
+                localStorage.setItem('all_secret_questions', JSON.stringify(window.secretQuestions));
+            }
+
+            // ✨ 메타데이터 버전 최신화
+            await markSubjectAsUpdated(targetSubject);
+            localStorage.setItem(`sync_time_${targetSubject}`, Date.now().toString());
+
             alert("✅ 문항이 성공적으로 수정되었습니다!");
-            loadQuestionsForEdit(); // 목록 새로고침
+            loadQuestionsForEdit(); 
+            
+            updateCountsFromSecretNotebook();
+            initDashboard();
         } catch(e) { alert("수정 실패: " + e.message); }
     }
 }
 
-// 👇 업데이트 중 실수로 삭제된 함수입니다. 이곳에 다시 붙여넣어 주세요! 👇
+// 🛠️ 교체: 문항 삭제 (Soft Delete 방식)
 async function deleteQuestionFromDB() {
     const qDocId = document.getElementById('admin-manage-q-list').value;
-    if (!qDocId) {
-        alert("먼저 삭제할 문항을 선택해주세요.");
-        return;
-    }
+    if (!qDocId) { alert("먼저 삭제할 문항을 선택해주세요."); return; }
 
     if (confirm("🚨 이 문항을 문제은행(DB)에서 영구 삭제하시겠습니까?")) {
         try {
-            await db.collection('transformed_bank').doc(qDocId).delete();
+            let targetSubject = currentEditingAllQuestions[qDocId]?.subject || currentSubject;
+            
+            // 💡 [핵심] 진짜로 삭제하지 않고, 숨김 처리(.update()) + 타임스탬프 갱신
+            await db.collection('transformed_bank').doc(qDocId).update({
+                isDeleted: true,
+                timestamp: firebase.firestore.FieldValue.serverTimestamp() 
+            });
+            
+            // 수첩에서 즉시 삭제
+            window.secretQuestions = window.secretQuestions.filter(q => q.id !== qDocId);
+            localStorage.setItem('all_secret_questions', JSON.stringify(window.secretQuestions));
+
+            const newSyncTime = await markSubjectAsUpdated(targetSubject);
+            if(newSyncTime > 0) localStorage.setItem(`sync_time_${targetSubject}`, newSyncTime.toString());
+
             alert("🗑️ 문항이 삭제되었습니다.");
             
-            // 삭제 후 입력창 숨기기
             const fields = document.getElementById('question-edit-fields');
             if(fields) fields.style.display = 'none';
             
-            loadQuestionsForEdit(); // 목록 새로고침
-        } catch(e) { 
-            alert("삭제 실패: " + e.message); 
-        }
+            loadQuestionsForEdit();
+            updateCountsFromSecretNotebook();
+            initDashboard();
+        } catch(e) { alert("삭제 실패: " + e.message); }
     }
 }
 
@@ -7228,6 +7356,10 @@ async function transformAndSaveExamToBank(skipConfirm = false) {
 
             await db.collection('transformed_bank').add(saveData);
             savedCount++; // 문항 1개당 1번만 카운트됨
+            // ✨ [추가] 시험지 일괄 변형 문항이 저장될 때마다 해당 과목 알림판 갱신!
+            if (typeof markSubjectAsUpdated === 'function') {
+                await markSubjectAsUpdated(autoSubject || targetSubject);
+            }
         }
 
         alert(`🎉 완벽합니다! 총 ${savedCount}개의 시험지 문항이 변형되어 알맞은 과목 DB에 보관되었습니다.`);
