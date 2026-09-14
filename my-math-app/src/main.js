@@ -1005,7 +1005,6 @@ async function executeAnalysis() {
             throw new Error(koreanError);
         }
         const analysisText = data.candidates[0].content.parts[0].text;
-        
         currentChatContext = analysisText;
 
         const wrapper = document.getElementById('analysis-layout-wrapper');
@@ -1029,49 +1028,44 @@ async function executeAnalysis() {
         
         // [원래 렌더링 유지] 1. 텍스트 및 HTML DOM 렌더링
         // ... (앞부분 API 호출 로직은 동일하게 유지) ...
-        
+        let aiData;
+        try {
+            aiData = JSON.parse(analysisText.replace(/```json\n?/gi, '').replace(/```/g, '').trim());
+        } catch (e) {
+            throw new Error("AI가 JSON 데이터 생성에 실패했습니다. 다시 시도해주세요.");
+        }
+
         if (isSingleMode) {
-            renderSophisticatedResult(analysisText, lastAnalyzedSingleImage);
+            // 단일 분석 렌더링 (새로운 방식)
+            renderSophisticatedResultJSON(aiData, lastAnalyzedSingleImage);
             
-            const qTxtMatch = analysisText.match(/(?:\[원본 문제 추출\]:?)([\s\S]*?)(?=\[교과|$)/);
-            const stdMatch = analysisText.match(/(?:성취기준:?\s*\[?)([^\]\n\s,]+)/);
-            const lvMatch = analysisText.match(/(?:성취수준:?\s*)([A-E]\+?)/);
-            const rsMatch = analysisText.match(/(?:판정 이유:?\s*)([\s\S]*?)(?=\[핵심|$)/);
-            // 💡 [추가] 상세 풀이 추출
-            const ansMatch = analysisText.match(/(?:\[상세 풀이\]:?)([\s\S]*?)(?=$)/); 
-
-            let pureQ = qTxtMatch ? qTxtMatch[1].trim() : "단일 문항 추출 실패";
-            let rawCodes = "";
-            
-            const rawStdLine = analysisText.match(/(?:성취기준:?\s*)([^\n]+)/);
-            if (rawStdLine) rawCodes = rawStdLine[1].trim();
-
-            let pureLv = lvMatch ? lvMatch[1].trim() : "C";
-            let pureRs = rsMatch ? rsMatch[1].trim() : "자동 수집된 평가 세부 내역";
-            let pureAns = ansMatch ? ansMatch[1].trim() : "상세 풀이 및 분석 리포트 내용 참조";
-
-            // 💡 [수정] 파라미터에 pureAns 추가
-            await saveAnalysisAutomatically(pureQ, rawCodes || "미분류", pureLv, pureRs, pureAns, lastAnalyzedSingleImage, commonPassages);
+            let pureCodes = aiData.standards.match(/\[([^\]]+)\]/)?.[1] || "미분류";
+            await saveAnalysisAutomatically(aiData.original_text, pureCodes, aiData.level, aiData.reason, aiData.solution, lastAnalyzedSingleImage, commonPassages);
             
         } else {
-            let rawText = analysisText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br>');
-            
-            rawText = rawText.replace(/\[문항\s*(\d+)\]/g, (match, p1) => {
-                const idx = parseInt(p1) - 1;
+            // 요약 분석 렌더링
+            let rawTextHTML = "";
+            aiData.items.forEach((item, idx) => {
                 const imgBase64 = cropBoxes[idx] ? getCroppedBase64(cropBoxes[idx]) : null;
-                let imgHtml = '';
+                let imgHtml = imgBase64 ? `<div style="margin: 15px 0; text-align: center;"><img src="data:image/jpeg;base64,${imgBase64}" style="width: 60%; border-radius: 6px;"></div>` : '';
                 
-                if (imgBase64) {
-                    imgHtml = `<div style="margin: 15px 0; text-align: center; background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0;">
-                               <img src="data:image/jpeg;base64,${imgBase64}" style="width: 60%; max-width: 400px; height: auto; border-radius: 6px; box-shadow: 0 3px 6px rgba(0,0,0,0.1);">
-                           </div>`;
-                }
+                rawTextHTML += `<div style="${idx > 0 ? 'border-top: 2px dashed #cbd5e1; margin-top: 2.5rem; padding-top: 1.5rem;' : ''}">
+                    <strong style="font-size: 1.3rem; color: #ef4444; background: #fee2e2; padding: 4px 12px; border-radius: 20px;">[${item.question_num}]</strong>
+                </div>${imgHtml}
+                <div style="margin-top: 15px;">
+                    <p><strong>문제:</strong> ${item.question_text}</p>
+                    <p><strong>과목/단원:</strong> ${item.subject_unit}</p>
+                    <p><strong>성취기준:</strong> ${item.standards}</p>
+                    <p><strong>성취수준:</strong> <span style="color:#ef4444; font-weight:bold;">${item.level}</span></p>
+                    <p><strong>판정이유:</strong> ${item.reason}</p>
+                    <p><strong>풀이/정답:</strong> ${item.solution}</p> 
+                </div>`;
                 
-                const borderTop = idx === 0 ? '' : 'border-top: 2px dashed #cbd5e1; margin-top: 2.5rem; padding-top: 1.5rem;';
-                return `<div style="${borderTop}"><strong style="font-size: 1.3rem; color: #ef4444; background: #fee2e2; padding: 4px 12px; border-radius: 20px;">${match}</strong></div>${imgHtml}`;
+                let pureCodes = item.standards.match(/\[([^\]]+)\]/)?.[1] || "미분류";
+                saveAnalysisAutomatically(item.question_text, pureCodes, item.level, item.reason, item.solution, imgBase64, commonPassages);
             });
 
-            resultText.innerHTML = `<div style="background: white; padding: 1.5rem; border-radius: 12px; border: 1px solid var(--border); line-height: 1.8;">${rawText}</div>`;
+            resultText.innerHTML = `<div style="background: white; padding: 1.5rem; border-radius: 12px; border: 1px solid var(--border); line-height: 1.8;">${rawTextHTML}</div>`;
 
             const blocks = analysisText.split(/\[문항\s*\d+\]/).map(b => b.trim()).filter(b => b.length > 10);
             for(let i = 0; i < blocks.length; i++) {
@@ -1231,7 +1225,7 @@ async function saveAnalysisAutomatically(extractedText, rawCodesStr, levelStr, r
     }
 }
 
-function renderSophisticatedResult(rawText, base64Image) {
+function renderSophisticatedResultJSON(data, base64Image) {
     const container = document.getElementById('result-text');
     container.innerHTML = "";
 
@@ -1239,88 +1233,51 @@ function renderSophisticatedResult(rawText, base64Image) {
         const imgDiv = document.createElement('div');
         imgDiv.style.textAlign = 'center';
         imgDiv.style.marginBottom = '1.5rem';
-        imgDiv.innerHTML = `<img src="data:image/jpeg;base64,${base64Image}" style="max-height: 200px; max-width: 100%; border: 1px solid #cbd5e1; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">`;
+        imgDiv.innerHTML = `<img src="data:image/jpeg;base64,${base64Image}" style="max-height: 200px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">`;
         container.appendChild(imgDiv);
     }
 
-    let text = rawText.replace(/</g, "&lt;").replace(/>/g, "&gt;");
-    text = text.replace(/(\*\*|#)/g, ''); 
-    text = text.replace(/(?:\[)?\s*원본\s*문제\s*추출\s*(?:\])?\s*:?/g, '[원본 문제 추출]:'); 
-    text = text.replace(/(?:\[)?\s*교과\s*및\s*단원\s*(?:\])?\s*:?/g, '[교과 및 단원]:');
-    text = text.replace(/(?:\[)?\s*성취기준\s*및\s*수준\s*(?:\])?\s*:?/g, '[성취기준 및 수준]:');
-    text = text.replace(/(?:\[)?\s*핵심\s*개념\s*(?:\])?\s*:?/g, '[핵심 개념]:');
-    text = text.replace(/(?:\[)?\s*시각화\s*자료\s*(?:\])?\s*:?/g, '[시각화 자료]:'); // 💡 새로 추가
-    text = text.replace(/(?:\[)?\s*상세\s*풀이\s*(?:\])?\s*:?/g, '[상세 풀이]:');
-    text = text.replace(/(?:\[)?\s*문제\s*풀이\s*(?:\])?\s*:?/g, '[상세 풀이]:'); 
-    
-const configs = [
-        { key: "[원본 문제 추출]:", title: "추출된 원본 문제 텍스트", icon: "📝", bg: "#f8fafc", border: "#94a3b8" },
-        { key: "[교과 및 단원]:", title: "교과명 및 단원명", icon: "📚", bg: "#f3f4f6", border: "#64748b" },
-        { key: "[성취기준 및 수준]:", title: "성취기준과 성취수준", icon: "📍", bg: "#eff6ff", border: "#3b82f6" },
-        { key: "[핵심 개념]:", title: "엄밀한 핵심 개념", icon: "💡", bg: "#fffbeb", border: "#f59e0b" },
-        { key: "[시각화 자료]:", title: "문제 분석 시각 자료", icon: "📊", bg: "#fdf4ff", border: "#e11d48" },
-        { key: "[상세 풀이]:", title: "단계별 정밀 풀이", icon: "✍️", bg: "#f0fdf4", border: "#10b981" }
+    // 💡 [핵심 개선] solution 문자열 내부의 '1단계:', '2단계:' 패턴을 찾아 예쁜 뱃지 박스로 변환합니다.
+    let processedSolution = data.solution ? data.solution.replace(/</g, "&lt;").replace(/>/g, "&gt;") : "";
+    processedSolution = processedSolution.replace(/(\d+단계[:.])/g, '<br><br><span style="background-color:#dbeafe; color:#1e40af; padding:4px 10px; border-radius:20px; font-weight:bold; font-size:0.95rem; display:inline-block; margin-bottom:8px;">$1</span><br>');
+    if(processedSolution.startsWith('<br><br>')) processedSolution = processedSolution.substring(8);
+    if(processedSolution.startsWith('<br>')) processedSolution = processedSolution.substring(4);
+    processedSolution = processedSolution.replace(/\n/g, '<br>');
+
+    const configs = [
+        { title: "추출된 원본 문제 텍스트", icon: "📝", content: data.original_text, bg: "#f8fafc", border: "#94a3b8" },
+        { title: "교과명 및 단원명", icon: "📚", content: data.subject_unit, bg: "#f3f4f6", border: "#64748b" },
+        { title: "성취기준과 성취수준", icon: "📍", content: `<strong>성취기준:</strong> ${data.standards}<br><br><strong>성취수준:</strong> <span style="color:#2563eb; font-size:1.1rem;">${data.level}</span><br><br><strong>판정 이유:</strong> ${data.reason}`, bg: "#eff6ff", border: "#3b82f6" },
+        { title: "엄밀한 핵심 개념", icon: "💡", content: data.core_concepts, bg: "#fffbeb", border: "#f59e0b" },
+        { title: "문제 분석 시각 자료", icon: "📊", content: data.svg_data, bg: "#fdf4ff", border: "#e11d48" },
+        { title: "단계별 정밀 풀이", icon: "✍️", content: processedSolution, bg: "#f0fdf4", border: "#10b981" } // 💡 변환된 풀이 적용
     ];
 
-configs.forEach((conf, index) => {
-        let content = "";
-        const startIndex = text.indexOf(conf.key);
+    configs.forEach((conf, index) => {
+        if (!conf.content || conf.content === "null") return;
         
-        if (startIndex !== -1) {
-            const contentStart = startIndex + conf.key.length;
-            let nextKeyIndex = text.length; 
-            configs.forEach((otherConf, otherIndex) => {
-                if (index !== otherIndex) {
-                    const idx = text.indexOf(otherConf.key, contentStart);
-                    if (idx !== -1 && idx < nextKeyIndex) { nextKeyIndex = idx; }
-                }
-            });
-            content = text.substring(contentStart, nextKeyIndex).trim();
+        let displayContent = conf.content;
+        if (conf.title === "문제 분석 시각 자료" && conf.content.includes('<svg')) {
+            displayContent = `<div style="text-align:center; margin:1rem 0; padding:1rem; border-radius:8px; border:1px dashed #e11d48; background:white;">${conf.content}</div>`;
         }
 
-        if (!content) return;
-
-        // 💡 [핵심] 정규식 개선: \n이 없거나 공백이 달라도 매칭되도록 수정
-        if (conf.key === "[시각화 자료]:" || conf.key === "[상세 풀이]:") {
-            content = content.replace(/(?:```svg\s*)?(?:&lt;svg|&lt;SVG)([\s\S]*?)(?:&lt;\/svg&gt;|&lt;\/SVG&gt;)(?:\s*```)?/g, function(match, p1) {
-                let svgCode = `<svg${p1}</svg>`.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
-                return `<div style="text-align: center; margin: 1.5rem 0; overflow-x: auto; background: white; padding: 1rem; border-radius: 8px; border: 1px dashed #e11d48;">${svgCode}</div>`;
-            });
-            
-            content = content.replace(/```mermaid\s*([\s\S]*?)```/g, function(match, p1) {
-                let mermaidCode = p1.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
-                return `<div class="mermaid" style="text-align: center; margin: 1.5rem 0; background: white; padding: 1rem; border-radius: 8px; border: 1px dashed #e11d48;">${mermaidCode}</div>`;
-            });
-        }
-
-        if (conf.key === "[원본 문제 추출]:") {
-            content = content.replace(/\n/g, '<br>');
-        }
-        if (conf.key === "[성취기준 및 수준]:") {
-            content = content.replace(/\n/g, ' ')
-                             .replace(/(성취기준:)/g, '<strong style="color:#2563eb; font-size: 1.05rem;">$1</strong>')
-                             .replace(/(성취수준:)/g, '<br><strong style="color:#2563eb; font-size: 1.05rem; margin-top: 8px; display: inline-block;">$1</strong>')
-                             .replace(/(판정 이유:)/g, '<br><strong style="color:#2563eb; font-size: 1.05rem; margin-top: 8px; display: inline-block;">$1</strong>');
-        }
-        if (conf.key === "[상세 풀이]:") {
-            content = content.replace(/(\d+단계[:.])/g, '<br><br><span style="background-color:#dbeafe; color:#1e40af; padding:4px 10px; border-radius:20px; font-weight:bold; font-size:0.95rem; display:inline-block; margin-bottom:8px;">$1</span><br>');
-            if(content.startsWith('<br><br>')) content = content.substring(8);
-            if(content.startsWith('<br>')) content = content.substring(4);
-        }
-        if (conf.key === "[핵심 개념]:") { content = content.replace(/\n/g, '<br>'); }
-
-const card = document.createElement('div');
-        card.style.cssText = `background: ${conf.bg}; border: 1px solid ${conf.border}44; border-left: 6px solid ${conf.border}; padding: 1.2rem; border-radius: 12px; margin-bottom: 1.2rem; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);`;
-        
+        const card = document.createElement('div');
+        card.style.cssText = `background: ${conf.bg}; border: 1px solid ${conf.border}44; border-left: 6px solid ${conf.border}; padding: 1.2rem; border-radius: 12px; margin-bottom: 1.2rem;`;
         card.innerHTML = `
             <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.8rem;">
                 <span style="font-size:1.2rem;">${conf.icon}</span>
-                <strong style="font-size:1.1rem; color:#1e293b;">${index}. ${conf.title}</strong>
+                <strong style="font-size:1.1rem; color:#1e293b;">${index + 1}. ${conf.title}</strong>
             </div>
-            <div class="analysis-content" style="color:#334155; line-height:1.8; font-size:0.95rem;">${content}</div>
+            <div style="color:#334155; line-height:1.8;">${displayContent}</div>
         `;
         container.appendChild(card);
     });
+
+    // 💡 수식 렌더링이 깨지지 않도록 MathJax 재실행 트리거 추가
+    if (window.MathJax) {
+        MathJax.typesetClear();
+        MathJax.typesetPromise([container]).catch(err => console.error(err));
+    }
 }
 
 // 💡 매개변수에 isRetry(재시도 여부)가 추가되었습니다.
