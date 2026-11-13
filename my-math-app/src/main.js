@@ -8023,7 +8023,7 @@ function updateManualTableStatus(asm, projectData) {
     }
 }
 
-// 3. 우측 팀원 영역 렌더링 (구조 및 하위요소는 상시 공개, A~E 점수는 [비교하기] 활성화 시만 공개)
+// 3. 우측 팀원 영역 렌더링 (영역명은 공통 연동, 점수는 [비교하기] 전까지 블라인드)
 function renderPartnerManualData(asm, projectData) {
     const container = document.getElementById('partner-manual-fields-container');
     if (!container) return;
@@ -8042,8 +8042,10 @@ function renderPartnerManualData(asm, projectData) {
     partnerEmails.forEach(email => {
         const name = email.split('@')[0];
         const scores = asm.teacherManualScores ? asm.teacherManualScores[email] : null;
-        // 각 팀원이 저장한 하위요소/구조 데이터 가져오기 (없으면 공통 subFactors 참조)
-        const structure = (asm.teacherManualStructures && asm.teacherManualStructures[email]) ? asm.teacherManualStructures[email] : [];
+        const partnerSubScores = asm.teacherManualSubFactorScores ? asm.teacherManualSubFactorScores[email] : null;
+        
+        // 공통 영역명 및 만점 구조 가져오기 (연동된 구조)
+        const commonStructure = asm.subFactors || [];
 
         html += `<div style="background: #f8fafc; border: 1px solid #cbd5e1; padding: 12px; border-radius: 8px; margin-bottom: 15px;">
             <div style="font-weight: bold; color: #1e3a8a; border-bottom: 1px dashed #cbd5e1; padding-bottom: 5px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
@@ -8051,29 +8053,43 @@ function renderPartnerManualData(asm, projectData) {
                 <span style="font-size: 0.75rem; font-weight: normal; color: ${scores ? '#166534' : '#64748b'}">${scores ? '✅ 입력완료' : '⏳ 대기 중'}</span>
             </div>`;
 
-        if (!structure || structure.length === 0) {
-            html += `<p style="color: #94a3b8; font-style: italic; font-size:0.9rem;">⏳ 입력된 하위요소 및 구조가 없습니다.</p></div>`;
+        if (commonStructure.length === 0) {
+            html += `<p style="color: #94a3b8; font-style: italic; font-size:0.9rem;">⏳ 입력된 하위요소 구조가 없습니다.</p></div>`;
             return;
         }
 
-        // 💡 1. 영역명, 비율, 하위요소는 팀원이 입력했으면 항상 노출되도록 처리
+        // 💡 1. 하위요소 영역명과 만점은 연동되어 항상 노출
         html += `<div style="margin-bottom: 8px; font-size: 0.85rem;">
-            <div style="font-weight: bold; color: #334155; margin-bottom: 4px;">📐 입력된 하위요소 및 구조:</div>`;
+            <div style="font-weight: bold; color: #334155; margin-bottom: 4px;">📐 하위요소 구조 (공통 영역명):</div>`;
         
-        structure.forEach(sf => {
+        commonStructure.forEach((sf, idx) => {
+            // 파트너가 이 하위요소에 입력한 점수 데이터 추출
+            let pScoreText = "미입력";
+            if (partnerSubScores && partnerSubScores[idx]) {
+                const ps = partnerSubScores[idx];
+                pScoreText = `A:${ps.a} | B:${ps.b} | C:${ps.c} | D:${ps.d} | E:${ps.e}`;
+            }
+
             html += `<div style="background: #ffffff; border: 1px solid #e2e8f0; padding: 6px 8px; border-radius: 4px; margin-bottom: 4px;">
                 <div style="display: flex; justify-content: space-between; font-weight: bold; color: #1e293b;">
                     <span>${sf.name || '영역명 없음'}</span>
                     <span>배점(만점): ${sf.max || 0}점</span>
-                </div>
-                <div style="font-size: 0.75rem; color: #64748b; margin-top: 2px;">
-                    A:${sf.a || 0} | B:${sf.b || 0} | C:${sf.c || 0} | D:${sf.d || 0} | E:${sf.e || 0}
-                </div>
-            </div>`;
+                </div>`;
+
+            // 💡 2. 하위요소별 점수는 [비교하기]를 누르기 전에는 숨김(블라인드), 눌렀을 때만 공개!
+            if (!scores) {
+                html += `<div style="font-size: 0.75rem; color: #94a3b8; margin-top: 2px; font-style: italic;">⏳ 파트너 점수 대기 중</div>`;
+            } else if (!isManualCompareMode) {
+                html += `<div style="font-size: 0.75rem; color: #047857; margin-top: 2px; background: #ecfdf5; padding: 2px 4px; border-radius: 3px; font-weight: bold;">🔒 세부 점수 (비교하기 활성화 시 공개)</div>`;
+            } else {
+                html += `<div style="font-size: 0.75rem; color: #1d4ed8; margin-top: 2px; font-weight: bold;">🎯 ${pScoreText}</div>`;
+            }
+
+            html += `</div>`;
         });
         html += `</div>`;
 
-        // 💡 2. A~E 최종 컷오프 점수는 [비교하기] 버튼을 누르기 전까지 블라인드 처리(숨김)
+        // 💡 3. 최종 A~E 점수 비교 블라인드 처리
         if (!scores) {
             html += `<p style="color: #94a3b8; font-style: italic; font-size:0.8rem; text-align:center; margin-top:8px;">⏳ 팀원 최종 점수 입력 대기 중...</p>`;
         } else if (!isManualCompareMode) {
@@ -8082,7 +8098,7 @@ function renderPartnerManualData(asm, projectData) {
                     <span style="color: #047857; font-weight: bold; font-size: 0.8rem;">🔒 A~E 최종 점수 (비교하기 활성화 시 공개)</span>
                 </div>`;
         } else {
-            // [비교하기] 활성화 시 팀원이 넣은 A~E 점수 비교 표출
+            // [비교하기] 활성화 시 최종 점수 오픈
             html += `
                 <div style="margin-top: 8px;">
                     <div style="font-weight: bold; color: #1e293b; font-size: 0.8rem; margin-bottom: 4px;">🎯 산출된 A~E 최종 점수 비교:</div>
@@ -8145,17 +8161,24 @@ async function saveManualAssessmentToProject() {
     saveBtn.innerHTML = "⏳ 저장 중..."; 
     saveBtn.disabled = true;
 
-    let subFactors = [];
+    // 💡 1. 하위요소에서 '공통 구조(영역명, 만점)'와 '내 독립 점수(A~E)'를 분리해서 수집합니다.
+    let subFactorsCommon = [];
+    let mySubFactorScores = [];
+
     document.querySelectorAll('.sub-factor-row').forEach(row => {
-        subFactors.push({
-            name: row.querySelector('.sub-factor-name').value,
-            max: parseFloat(row.querySelector('.sub-factor-max').value) || 0,
-            a: parseFloat(row.querySelector('.sub-a').value) || 0,
-            b: parseFloat(row.querySelector('.sub-b').value) || 0,
-            c: parseFloat(row.querySelector('.sub-c').value) || 0,
-            d: parseFloat(row.querySelector('.sub-d').value) || 0,
-            e: parseFloat(row.querySelector('.sub-e').value) || 0
-        });
+        const sfName = row.querySelector('.sub-factor-name').value;
+        const sfMax = parseFloat(row.querySelector('.sub-factor-max').value) || 0;
+        const sfA = parseFloat(row.querySelector('.sub-a').value) || 0;
+        const sfB = parseFloat(row.querySelector('.sub-b').value) || 0;
+        const sfC = parseFloat(row.querySelector('.sub-c').value) || 0;
+        const sfD = parseFloat(row.querySelector('.sub-d').value) || 0;
+        const sfE = parseFloat(row.querySelector('.sub-e').value) || 0;
+
+        // 공통 구조에는 영역명과 만점만 저장 (두 교사가 연동 공유)
+        subFactorsCommon.push({ name: sfName, max: sfMax });
+        
+        // 내 점수 서랍에는 각 하위요소별 A~E 점수를 따로 저장
+        mySubFactorScores.push({ name: sfName, a: sfA, b: sfB, c: sfC, d: sfD, e: sfE });
     });
 
     try {
@@ -8174,9 +8197,9 @@ async function saveManualAssessmentToProject() {
                     name: name,
                     weight: weight,
                     type: 'manual',
-                    subFactors: subFactors,
+                    subFactors: subFactorsCommon, // 공통 구조 저장
                     teacherManualScores: {},
-                    teacherManualStructures: {},
+                    teacherManualSubFactorScores: {}, // 교사별 세부 점수 서랍
                     savedAt: new Date()
                 };
                 assessments.push(asm);
@@ -8185,15 +8208,15 @@ async function saveManualAssessmentToProject() {
                 asm = assessments[currentEditingAssessmentIndex];
                 asm.name = name;
                 asm.weight = weight;
-
+                asm.subFactors = subFactorsCommon; // 💡 영역명과 만점은 공통으로 동기화(연동)
             }
 
-            // 개별 점수 및 개별 구조(하위요소) 저장
+            // 개별 최종 점수 및 교사별 세부 하위점수 저장
             if (!asm.teacherManualScores) asm.teacherManualScores = {};
-            if (!asm.teacherManualStructures) asm.teacherManualStructures = {};
+            if (!asm.teacherManualSubFactorScores) asm.teacherManualSubFactorScores = {};
             
             asm.teacherManualScores[currentUserEmail] = { A:vA, B:vB, C:vC, D:vD, E:vE };
-            asm.teacherManualStructures[currentUserEmail] = subFactors;
+            asm.teacherManualSubFactorScores[currentUserEmail] = mySubFactorScores; // 내 독립 점수 기록
 
             let allMembers = projectData.collaborators || [];
             if (projectData.ownerEmail && !allMembers.includes(projectData.ownerEmail)) allMembers.unshift(projectData.ownerEmail);
