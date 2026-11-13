@@ -67,8 +67,8 @@ const auth = firebase.auth();
 const provider = new firebase.auth.GoogleAuthProvider();
 const storage = firebase.storage();
 
-const CURRENT_VERSION = "1.2.11"; 
-// 2026년 8월 12일 수정처리됨
+const CURRENT_VERSION = "1.2.12"; 
+// 2026년 9월 14일 최종수정처리됨
 // 읽기 횟수를 절약하는 버전 체크 방식 (onSnapshot 대신 get 사용)
 function startAppVersionCheck() {
     db.collection('system_config').doc('version_control').get()
@@ -4860,7 +4860,12 @@ async function loadProjects() {
                     }).join('') 
                     : '<span style="font-size: 0.8rem; color: #94a3b8;">평가 내역 없음</span>';
         
-                const deleteBtn = isOwnerList ? `<button onclick="deleteProject('${data.id}', event)" style="position: absolute; top: 15px; right: 15px; background: #fee2e2; color: #ef4444; border: none; padding: 2px 5px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 0.65rem; z-index: 10;">폴더 삭제</button>` : '';
+                const actionBtns = isOwnerList ? `
+                    <div style="position: absolute; top: 15px; right: 15px; display: flex; gap: 4px; z-index: 10;">
+                        <button onclick="renameProject('${data.id}', '${data.name}', event)" style="background: #e0e7ff; color: #3730a3; border: none; padding: 2px 6px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 0.65rem; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">폴더명 수정</button>
+                        <button onclick="deleteProject('${data.id}', event)" style="background: #fee2e2; color: #ef4444; border: none; padding: 2px 6px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 0.65rem; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">폴더 삭제</button>
+                    </div>
+                ` : '';
                 const memberManagementBtns = isOwnerList ? `
                     <div style="position: absolute; top: 42px; right: 15px; display: flex; gap: 4px; z-index: 10;">
                         <button onclick="inviteCollaborator('${data.id}', event)" style="background: #dbeafe; color: #1e40af; border: none; padding: 2px 5px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 0.65rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">🤝 팀원 초대</button>
@@ -4890,7 +4895,7 @@ async function loadProjects() {
                      onmouseover="this.style.borderColor='#3b82f6'; this.style.transform='translateY(-3px)';" 
                      onmouseout="this.style.borderColor='#cbd5e1'; this.style.transform='none';">
                      
-                    ${deleteBtn}
+                    ${actionBtns}
                     ${memberManagementBtns}
                     ${memberHtml}
                     
@@ -4919,6 +4924,20 @@ async function loadProjects() {
 
         listEl.innerHTML = html;
     } catch(e) { listEl.innerHTML = '<p style="color:red; grid-column: 1 / -1;">폴더를 불러오는데 실패했습니다.</p>'; }
+}
+
+// 📁 [새로 추가할 함수] 폴더명 수정 함수 (loadProjects 함수 바깥쪽에 위치해야 합니다)
+async function renameProject(projectId, currentName, event) {
+    if (event) event.stopPropagation(); // 카드 전체가 클릭되는 것을 막아줍니다
+    const newName = prompt("변경할 새로운 폴더명을 입력하세요:", currentName);
+    if (!newName || newName.trim() === "") return;
+    try {
+        await db.collection('user_projects').doc(projectId).update({ name: newName.trim() });
+        alert("📁 폴더명이 성공적으로 수정되었습니다.");
+        loadProjects(); // 목록 새로고침
+    } catch (e) {
+        alert("폴더명 수정 실패: " + e.message);
+    }
 }
 
 // 🟢 [추가됨] 폴더(프로젝트) 삭제 로직
@@ -8004,7 +8023,7 @@ function updateManualTableStatus(asm, projectData) {
     }
 }
 
-// 3. 우측 팀원 영역 렌더링 (블라인드 🔒 및 토글 적용)
+// 3. 우측 팀원 영역 렌더링 (구조 및 하위요소는 상시 공개, A~E 점수는 [비교하기] 활성화 시만 공개)
 function renderPartnerManualData(asm, projectData) {
     const container = document.getElementById('partner-manual-fields-container');
     if (!container) return;
@@ -8023,35 +8042,61 @@ function renderPartnerManualData(asm, projectData) {
     partnerEmails.forEach(email => {
         const name = email.split('@')[0];
         const scores = asm.teacherManualScores ? asm.teacherManualScores[email] : null;
-        const structure = asm.teacherManualStructures ? asm.teacherManualStructures[email] : null;
+        // 각 팀원이 저장한 하위요소/구조 데이터 가져오기 (없으면 공통 subFactors 참조)
+        const structure = (asm.teacherManualStructures && asm.teacherManualStructures[email]) ? asm.teacherManualStructures[email] : (asm.subFactors || []);
 
         html += `<div style="background: #f8fafc; border: 1px solid #cbd5e1; padding: 12px; border-radius: 8px; margin-bottom: 15px;">
-            <div style="font-weight: bold; color: #1e3a8a; border-bottom: 1px dashed #cbd5e1; padding-bottom: 5px; margin-bottom: 8px;">👤 ${name} 선생님</div>`;
+            <div style="font-weight: bold; color: #1e3a8a; border-bottom: 1px dashed #cbd5e1; padding-bottom: 5px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
+                <span>👤 ${name} 선생님</span>
+                <span style="font-size: 0.75rem; font-weight: normal; color: ${scores ? '#166534' : '#64748b'}">${scores ? '✅ 입력완료' : '⏳ 대기 중'}</span>
+            </div>`;
 
-        if (!scores) {
-            html += `<p style="color: #94a3b8; font-style: italic; font-size:0.9rem;">⏳ 입력 대기 중...</p></div>`;
-        } else if (!isManualCompareMode) {
-            // 🔒 모두 완료했으나 아직 비교하기를 안 누른 상태 (블라인드)
-            html += `
-                <div style="text-align:center; padding: 15px; background: #ecfdf5; border: 1px dashed #10b981; border-radius: 6px;">
-                    <span style="color: #047857; font-weight: bold;">✅ 입력완료 🔒</span><br>
-                    <span style="font-size: 0.75rem; color: #065f46; display: block; margin-top: 5px;">(모든 교사 완료 후 [비교하기] 클릭 시 공개)</span>
-                </div></div>`;
-        } else {
-            // 🔓 비교하기 눌렀을 때 (오픈)
-            if (structure && structure.length > 0) {
-                html += `<div style="font-size:0.8rem; background:#ffffff; border:1px solid #e2e8f0; padding:6px; border-radius:4px; margin-bottom:8px;">
-                    <strong>📐 구조:</strong> ` + structure.map(s => `${s.domainName}(${s.subElements.join('+')})`).join(', ') + `</div>`;
-            }
-            html += `
-                <div style="display: flex; gap: 4px; font-size: 0.85rem; text-align: center;">
-                    <span style="flex:1; background:#fee2e2; color:#b91c1c; padding:6px 2px; border-radius:4px; font-weight:bold;">A:${scores.A}</span>
-                    <span style="flex:1; background:#fef3c7; color:#b45309; padding:6px 2px; border-radius:4px; font-weight:bold;">B:${scores.B}</span>
-                    <span style="flex:1; background:#dcfce7; color:#15803d; padding:6px 2px; border-radius:4px; font-weight:bold;">C:${scores.C}</span>
-                    <span style="flex:1; background:#dbeafe; color:#1d4ed8; padding:6px 2px; border-radius:4px; font-weight:bold;">D:${scores.D}</span>
-                    <span style="flex:1; background:#f1f5f9; color:#475569; padding:6px 2px; border-radius:4px; font-weight:bold;">E:${scores.E}</span>
-                </div></div>`;
+        if (!structure || structure.length === 0) {
+            html += `<p style="color: #94a3b8; font-style: italic; font-size:0.9rem;">⏳ 입력된 하위요소 및 구조가 없습니다.</p></div>`;
+            return;
         }
+
+        // 💡 1. 영역명, 비율, 하위요소는 팀원이 입력했으면 항상 노출되도록 처리
+        html += `<div style="margin-bottom: 8px; font-size: 0.85rem;">
+            <div style="font-weight: bold; color: #334155; margin-bottom: 4px;">📐 입력된 하위요소 및 구조:</div>`;
+        
+        structure.forEach(sf => {
+            html += `<div style="background: #ffffff; border: 1px solid #e2e8f0; padding: 6px 8px; border-radius: 4px; margin-bottom: 4px;">
+                <div style="display: flex; justify-content: space-between; font-weight: bold; color: #1e293b;">
+                    <span>${sf.name || '영역명 없음'}</span>
+                    <span>배점(만점): ${sf.max || 0}점</span>
+                </div>
+                <div style="font-size: 0.75rem; color: #64748b; margin-top: 2px;">
+                    A:${sf.a || 0} | B:${sf.b || 0} | C:${sf.c || 0} | D:${sf.d || 0} | E:${sf.e || 0}
+                </div>
+            </div>`;
+        });
+        html += `</div>`;
+
+        // 💡 2. A~E 최종 컷오프 점수는 [비교하기] 버튼을 누르기 전까지 블라인드 처리(숨김)
+        if (!scores) {
+            html += `<p style="color: #94a3b8; font-style: italic; font-size:0.8rem; text-align:center; margin-top:8px;">⏳ 팀원 최종 점수 입력 대기 중...</p>`;
+        } else if (!isManualCompareMode) {
+            html += `
+                <div style="text-align:center; padding: 8px; background: #ecfdf5; border: 1px dashed #10b981; border-radius: 6px; margin-top: 8px;">
+                    <span style="color: #047857; font-weight: bold; font-size: 0.8rem;">🔒 A~E 최종 점수 (비교하기 활성화 시 공개)</span>
+                </div>`;
+        } else {
+            // [비교하기] 활성화 시 팀원이 넣은 A~E 점수 비교 표출
+            html += `
+                <div style="margin-top: 8px;">
+                    <div style="font-weight: bold; color: #1e293b; font-size: 0.8rem; margin-bottom: 4px;">🎯 산출된 A~E 최종 점수 비교:</div>
+                    <div style="display: flex; gap: 4px; font-size: 0.85rem; text-align: center;">
+                        <span style="flex:1; background:#fee2e2; color:#b91c1c; padding:6px 2px; border-radius:4px; font-weight:bold;">A:${scores.A}</span>
+                        <span style="flex:1; background:#fef3c7; color:#b45309; padding:6px 2px; border-radius:4px; font-weight:bold;">B:${scores.B}</span>
+                        <span style="flex:1; background:#dcfce7; color:#15803d; padding:6px 2px; border-radius:4px; font-weight:bold;">C:${scores.C}</span>
+                        <span style="flex:1; background:#dbeafe; color:#1d4ed8; padding:6px 2px; border-radius:4px; font-weight:bold;">D:${scores.D}</span>
+                        <span style="flex:1; background:#f1f5f9; color:#475569; padding:6px 2px; border-radius:4px; font-weight:bold;">E:${scores.E}</span>
+                    </div>
+                </div>`;
+        }
+
+        html += `</div>`;
     });
     container.innerHTML = html;
 }
@@ -8059,7 +8104,6 @@ function renderPartnerManualData(asm, projectData) {
 // 4. 비교하기(토글) 버튼 클릭 시 실행
 async function toggleManualCompareMode() {
     isManualCompareMode = !isManualCompareMode;
-    // 상태만 바꾼 뒤 작업공간 리로드 (DB 새로 안 부르고 화면만 다시 그림)
     if (!currentProjectId || currentEditingAssessmentIndex === -1) return;
     const doc = await db.collection('user_projects').doc(currentProjectId).get();
     if(doc.exists) {
@@ -8072,13 +8116,11 @@ async function toggleManualCompareMode() {
 
 // 5. 결과 저장 (새로 만들기 & 기존 수정 완벽 통합)
 async function saveManualAssessmentToProject() {
-    // 💡 1. 인덱스가 -1일 때 튕겨내는 방어막을 제거해야 '신규 생성'이 가능합니다.
     if (!currentProjectId) {
         alert("선택된 프로젝트가 없습니다. 폴더를 다시 열어주세요.");
         return;
     }
 
-    // 💡 2. 평가명과 반영 비율을 가장 먼저 확인합니다.
     const name = document.getElementById('manual-assess-name').value.trim();
     const weight = parseFloat(document.getElementById('manual-assess-weight').value) || 0;
     
@@ -8087,7 +8129,6 @@ async function saveManualAssessmentToProject() {
         return;
     }
 
-    // 💡 3. 괄호를 밖으로 빼서 빈칸/문자 입력 시 화면이 멈추는(NaN 에러) 현상을 원천 차단했습니다.
     const vA = parseFloat(document.getElementById('manual-a').value) || 0;
     const vB = parseFloat(document.getElementById('manual-b').value) || 0;
     const vC = parseFloat(document.getElementById('manual-c').value) || 0;
@@ -8104,7 +8145,6 @@ async function saveManualAssessmentToProject() {
     saveBtn.innerHTML = "⏳ 저장 중..."; 
     saveBtn.disabled = true;
 
-    // 💡 4. 선생님이 만드신 하위 평가요소(가,나,다) 줄의 내용들을 배열로 모아줍니다.
     let subFactors = [];
     document.querySelectorAll('.sub-factor-row').forEach(row => {
         subFactors.push({
@@ -8129,41 +8169,39 @@ async function saveManualAssessmentToProject() {
 
             let asm;
             
-            // 💡 5. 핵심 로직: 신규 생성이면 배열에 새로 밀어넣고(-1), 기존 것이면 덮어씁니다!
             if (currentEditingAssessmentIndex === -1) {
-                // [신규 생성 모드]
                 asm = {
                     name: name,
                     weight: weight,
                     type: 'manual',
                     subFactors: subFactors,
                     teacherManualScores: {},
+                    teacherManualStructures: {},
                     savedAt: new Date()
                 };
                 assessments.push(asm);
-                // 방금 새로 만든 요소의 번호(배열의 맨 끝)로 인덱스를 업데이트 해줍니다.
                 currentEditingAssessmentIndex = assessments.length - 1; 
             } else {
-                // [기존 수정 모드]
                 asm = assessments[currentEditingAssessmentIndex];
                 asm.name = name;
                 asm.weight = weight;
                 asm.subFactors = subFactors; 
             }
 
-            // 내 점수 기록하기
+            // 개별 점수 및 개별 구조(하위요소) 저장
             if (!asm.teacherManualScores) asm.teacherManualScores = {};
+            if (!asm.teacherManualStructures) asm.teacherManualStructures = {};
+            
             asm.teacherManualScores[currentUserEmail] = { A:vA, B:vB, C:vC, D:vD, E:vE };
+            asm.teacherManualStructures[currentUserEmail] = subFactors;
 
-            // 협업 완료 현황 확인
             let allMembers = projectData.collaborators || [];
             if (projectData.ownerEmail && !allMembers.includes(projectData.ownerEmail)) allMembers.unshift(projectData.ownerEmail);
             if (!allMembers.includes(currentUserEmail)) allMembers.push(currentUserEmail);
             const collaborators = [...new Set(allMembers)];
 
-            let isFinal = collaborators.every(email => asm.teacherManualScores[email]);
+            let isFinal = collaborators.every(email => asm.teacherManualScores && asm.teacherManualScores[email]);
 
-            // 모두 입력했다면 최종 점수 합산 반영
             if (isFinal) {
                 let avg = { A:0, B:0, C:0, D:0, E:0 };
                 collaborators.forEach(email => {
@@ -8188,13 +8226,11 @@ async function saveManualAssessmentToProject() {
                 alert("✅ 내 점수가 저장되었습니다. 다른 교사가 완료하면 최종 산출됩니다.");
             }
 
-            // DB에 최종 덮어쓰기!
             await docRef.update({ assessments: assessments });
             
             saveBtn.innerHTML = "✅ 저장 완료";
             saveBtn.style.background = "#10b981";
             
-            // 뒤에 깔려있는 메인 목록과 현재 수행평가 작업판 모두 갱신 (선생님이 찾으시던 마지막 부분입니다!)
             if(typeof loadProjectDetails === 'function') loadProjectDetails(); 
             loadManualAssessmentWorkspace(); 
         }
@@ -8206,12 +8242,10 @@ async function saveManualAssessmentToProject() {
     }
 }
 
-
 // 6. 수정하기
 async function enableManualEditMode() {
     if (!currentProjectId || currentEditingAssessmentIndex === -1) return;
 
-    // 기존 기능 유지 (화면 잠금 해제 및 버튼 원래대로)
     lockManualInputs(false);
     const saveBtn = document.getElementById('btn-save-manual');
     saveBtn.innerHTML = "💾 결과 저장하기";
@@ -8219,7 +8253,6 @@ async function enableManualEditMode() {
     saveBtn.disabled = false;
     saveBtn.style.cursor = "pointer";
 
-    // ✨ [추가된 부분] DB에서 내 완료 기록을 임시 삭제하여 '대기' 상태로 전환
     try {
         const docRef = db.collection('user_projects').doc(currentProjectId);
         const doc = await docRef.get();
@@ -8228,13 +8261,11 @@ async function enableManualEditMode() {
             let asm = projectData.assessments[currentEditingAssessmentIndex];
             const myEmail = auth.currentUser.email;
 
-            // 내 완료 기록 삭제 및 누군가 수정중이므로 최종 점수(scores) 블라인드 처리
             if (asm.teacherManualScores) delete asm.teacherManualScores[myEmail];
             if (asm.scores) delete asm.scores; 
 
             await docRef.update({ assessments: projectData.assessments });
             
-            // 현황판 즉시 '대기'로 새로고침
             updateManualTableStatus(asm, projectData);
             if (typeof loadProjectDetails === 'function') loadProjectDetails();
         }
@@ -8254,19 +8285,15 @@ async function resetManualScores() {
             let asm = projectData.assessments[currentEditingAssessmentIndex];
             const myEmail = auth.currentUser.email;
 
-            // 기존 로직 유지 (DB 내용 완전 삭제)
             if(asm.teacherManualScores) delete asm.teacherManualScores[myEmail];
             if(asm.teacherManualStructures) delete asm.teacherManualStructures[myEmail];
             if(asm.scores) delete asm.scores;
 
             await docRef.update({ assessments: projectData.assessments });
             
-            // ✨ [보강된 부분] 화면의 모든 입력칸을 깔끔하게 비우고 버튼 되돌리기
-            document.querySelectorAll('.my-manual-score-input').forEach(i => {
-                i.value = ''; 
-            });
-            lockManualInputs(false); // 잠금 해제
-            document.getElementById('sub-factors-list').innerHTML = ''; // 하위 요소 줄 비우기
+            document.querySelectorAll('.my-manual-score-input').forEach(i => { i.value = ''; });
+            lockManualInputs(false);
+            document.getElementById('sub-factors-list').innerHTML = '';
             
             const saveBtn = document.getElementById('btn-save-manual');
             saveBtn.innerHTML = "💾 결과 저장하기";
@@ -8276,7 +8303,6 @@ async function resetManualScores() {
 
             alert("🗑️ 초기화 완료! 다시 입력해주세요.");
             
-            // 현황판 즉시 새로고침
             updateManualTableStatus(asm, projectData);
             if (typeof loadProjectDetails === 'function') loadProjectDetails();
             loadManualAssessmentWorkspace();
@@ -8290,10 +8316,9 @@ async function syncManualStructureFromDB() {
     try {
         const doc = await db.collection('user_projects').doc(currentProjectId).get();
         const asm = doc.data().assessments[currentEditingAssessmentIndex];
-        if (asm.manualStructure && asm.manualStructure.length > 0) {
-            alert("🔄 [기능연결 필요] 팀원이 저장한 구조를 불러왔습니다. 선생님의 UI 생성 함수를 이곳에 연결해 주세요.");
-            console.log("불러온 구조:", asm.manualStructure);
-            // 💡 여기에 선생님의 수행평가 UI 생성 함수(예: addDomainUI)를 호출하여 asm.manualStructure 데이터를 넣어주시면 됩니다.
+        if (asm.subFactors && asm.subFactors.length > 0) {
+            alert("🔄 팀원이 저장한 구조를 불러왔습니다.");
+            console.log("불러온 구조:", asm.subFactors);
         } else {
             alert("💡 연동할 구조가 아직 없습니다.");
         }
