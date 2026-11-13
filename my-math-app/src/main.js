@@ -8043,7 +8043,7 @@ function renderPartnerManualData(asm, projectData) {
         const name = email.split('@')[0];
         const scores = asm.teacherManualScores ? asm.teacherManualScores[email] : null;
         // 각 팀원이 저장한 하위요소/구조 데이터 가져오기 (없으면 공통 subFactors 참조)
-        const structure = (asm.teacherManualStructures && asm.teacherManualStructures[email]) ? asm.teacherManualStructures[email] : (asm.subFactors || []);
+        const structure = (asm.teacherManualStructures && asm.teacherManualStructures[email]) ? asm.teacherManualStructures[email] : [];
 
         html += `<div style="background: #f8fafc; border: 1px solid #cbd5e1; padding: 12px; border-radius: 8px; margin-bottom: 15px;">
             <div style="font-weight: bold; color: #1e3a8a; border-bottom: 1px dashed #cbd5e1; padding-bottom: 5px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
@@ -8185,7 +8185,7 @@ async function saveManualAssessmentToProject() {
                 asm = assessments[currentEditingAssessmentIndex];
                 asm.name = name;
                 asm.weight = weight;
-                asm.subFactors = subFactors; 
+
             }
 
             // 개별 점수 및 개별 구조(하위요소) 저장
