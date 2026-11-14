@@ -5354,43 +5354,14 @@ function rearrangeQuestionNumbers() {
     });
 }
 
-function openManualAssessmentModal() { 
-    document.getElementById('manual-assess-name').value = '';
-    document.getElementById('manual-assess-weight').value = '';
-    // ✨ 입력하지 않아도 0점이 되지 않도록 실제 값을 꽂아줍니다.
-    document.getElementById('manual-a').value = '';
-    document.getElementById('manual-b').value = '';
-    document.getElementById('manual-c').value = '';
-    document.getElementById('manual-d').value = '';
-    document.getElementById('manual-e').value = '';
-    
-    document.getElementById('sub-factors-list').innerHTML = ''; 
-    
-    // 🌟 [버그 수정 1] 새 평가를 만들 때 기존 인덱스 완벽 초기화 (덮어쓰기 방지)
-    currentEditingManualIndex = -1; 
-    currentEditingAssessmentIndex = -1;
-
-    // 🌟 [버그 수정 2] 창을 열 때 무조건 저장 버튼 잠금 해제
-    const saveBtn = document.getElementById('btn-save-manual');
-    if (saveBtn) {
-        saveBtn.innerHTML = "💾 결과 저장하기";
-        saveBtn.style.background = "#ea580c";
-        saveBtn.disabled = false;
-    }
-
-    document.getElementById('manual-assessment-modal').style.display = 'flex'; 
-}
 
 
-let currentEditingManualIndex = -1;
 
-// ✨ [수정됨] 수행평가 수정 창 열기 함수 (협업 블라인드 에러 완벽 해결 + CCTV 최적화)
+// ✨ 수행평가 수정 창 열기 함수 (최종 정돈 버전)
 function editManualAssessment(index) {
-    // 💡 새로운 협업 시스템이 내가 몇 번째 평가를 누른 건지 알 수 있도록 네비게이션 설정
     currentEditingAssessmentIndex = index;
-    currentEditingManualIndex = index;
 
-    // 💡 [CCTV 최적화 1] 상세 작업에 들어왔으므로, 메인 폴더의 실시간 감시를 잠시 꺼서 데이터를 절약합니다.
+    // CCTV 최적화: 메인 폴더 실시간 감시 일시 중지
     if (typeof projectDetailsUnsubscribe !== 'undefined' && projectDetailsUnsubscribe) {
         projectDetailsUnsubscribe();
         projectDetailsUnsubscribe = null;
@@ -5400,13 +5371,12 @@ function editManualAssessment(index) {
         if(doc.exists) {
             const projectData = doc.data();
             const asm = projectData.assessments[index];
-            const myEmail = auth.currentUser.email;
             
-            // 1. 평가명과 비율 등 기본 정보 세팅
+            // 1. 평가명과 반영 비율 기본 정보 세팅
             document.getElementById('manual-assess-name').value = asm.name || '';
             document.getElementById('manual-assess-weight').value = asm.weight || '';
             
-            // 2. 선생님의 하위 평가요소 데이터(가, 나, 다 등) 복원
+            // 2. 하위 평가요소 데이터 초기화 후 복원
             const subList = document.getElementById('sub-factors-list');
             if(subList) subList.innerHTML = '';
             
@@ -5420,21 +5390,9 @@ function editManualAssessment(index) {
             const modal = document.getElementById('manual-assessment-modal');
             if(modal) modal.style.display = 'flex';
 
-            // 4. [핵심] 새로 만든 협업 워크스페이스 실행! (이 안에서 수행평가 전용 CCTV가 켜집니다)
+            // 4. 수행평가 전용 협업 워크스페이스(CCTV 포함) 실행
             if (typeof loadManualAssessmentWorkspace === 'function') {
                 loadManualAssessmentWorkspace();
-            } else {
-                // (만약 새 시스템이 아직 연동 안 된 과도기일 경우를 위한 안전 방어막 - 기존 코드 완벽 유지)
-                const ratio = asm.weight ? (asm.weight / 100) : 1;
-                let target = (asm.teacherManualScores && asm.teacherManualScores[myEmail]) 
-                             ? asm.teacherManualScores[myEmail] 
-                             : (asm.scores || {A:0, B:0, C:0, D:0, E:0});
-                
-                document.getElementById('manual-a').value = Math.round((target.A || 0) / ratio);
-                document.getElementById('manual-b').value = Math.round((target.B || 0) / ratio);
-                document.getElementById('manual-c').value = Math.round((target.C || 0) / ratio);
-                document.getElementById('manual-d').value = Math.round((target.D || 0) / ratio);
-                document.getElementById('manual-e').value = Math.round((target.E || 0) / ratio);
             }
         }
     }).catch(e => {
@@ -5446,7 +5404,7 @@ function editManualAssessment(index) {
 // ✨ 모달 닫기 (수행평가 CCTV 차단 및 폴더 복귀)
 function closeManualAssessmentModal() { 
     document.getElementById('manual-assessment-modal').style.display = 'none';
-    currentEditingManualIndex = -1; 
+    currentEditingAssessmentIndex = -1;
     
     document.querySelectorAll('#manual-assessment-modal input').forEach(input => {
         input.value = '';
@@ -10556,7 +10514,7 @@ const exposeToWindow = {
     closeAdminFeedback, saveApiKey, submitFeedback, showSection,
     openAnalysisMode, startLevelMatching, checkLevelAnswer, nextLevelQuestion,
     backToStandardSelection, saveChecklist, openModal, loadBookmark, openBookmarkModal,
-    closeBookmarkModal, createNewProject, backToProjectList, openManualAssessmentModal,
+    closeBookmarkModal, createNewProject, backToProjectList, 
     closeManualAssessmentModal, generateEmptyScoreTable,
     downloadScoreTemplate, handleExcelUpload, openAiHelper, 
     handleNextToPath1Result, goBackStep, saveAssessmentToProject, saveWrittenAssessmentShell,
@@ -10589,7 +10547,7 @@ const exposeToWindow = {
     toggleLatexHelper, closeLatexHelper, insertLatex, runTweezerRepair,
     // 👇👇👇 여기에 새로운 수행평가 함수 3가지를 추가했습니다! 👇👇👇
     openPerformanceMaker, populatePerformanceStandards, executePerformanceGeneration, addPerfStandardSelect,
-    downloadPerfAsPDF, exportToGoogleDocs, downloadPerfAsWord, openManualAssessmentModal
+    downloadPerfAsPDF, exportToGoogleDocs, downloadPerfAsWord, openNewManualAssessmentModal
 };
 
 for (const [fnName, fn] of Object.entries(exposeToWindow)) {
