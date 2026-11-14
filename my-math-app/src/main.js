@@ -7964,12 +7964,46 @@ async function loadManualAssessmentWorkspace() {
         const subListEl = document.getElementById('sub-factors-list');
         if (subListEl) subListEl.innerHTML = ''; 
 
-        // 만약 기존에 저장된 공통 하위요소(subFactors) 구조가 있다면 화면에 하위요소 줄들을 복원해 줍니다.
+        // 💡 [수정] 기존 수정 모드 내 하위요소 및 내 점수 복원 로직 교체
         if (asm.subFactors && asm.subFactors.length > 0) {
-            asm.subFactors.forEach(sf => {
-                // 💡 선생님 웹앱에 이미 구현되어 있는 하위요소 행 추가 함수가 있다면 여기서 호출하여 sf.name과 sf.max를 채워넣어 주시면 됩니다.
-                // 예: addSubFactorRowWithData(sf.name, sf.max);
+            const mySubScores = (asm.teacherManualSubFactorScores && asm.teacherManualSubFactorScores[myEmail]) || [];
+            
+            asm.subFactors.forEach((sf, idx) => {
+                // 하위요소 행을 추가하는 함수 호출 (웹앱에 맞게 인자 전달)
+                // 만약 addSubFactorRow() 함수가 있다면 호출 후 반환된 row element나 DOM을 활용해 값을 채워줍니다.
+                if (typeof addSubFactorRow === 'function') {
+                    addSubFactorRow(); // 빈 행 추가
+                    const rows = document.querySelectorAll('.sub-factor-row');
+                    const currentRow = rows[rows.length - 1];
+                    
+                    if (currentRow) {
+                        const nameInput = currentRow.querySelector('.sub-factor-name');
+                        const maxInput = currentRow.querySelector('.sub-factor-max');
+                        if (nameInput) nameInput.value = sf.name || '';
+                        if (maxInput) maxInput.value = sf.max || '';
+                        
+                        // 내 세부 점수(A~E)가 있다면 함께 복원
+                        const savedSub = mySubScores[idx];
+                        if (savedSub) {
+                            const elA = currentRow.querySelector('.sub-a');
+                            const elB = currentRow.querySelector('.sub-b');
+                            const elC = currentRow.querySelector('.sub-c');
+                            const elD = currentRow.querySelector('.sub-d');
+                            const elE = currentRow.querySelector('.sub-e');
+                            
+                            if (elA) elA.value = savedSub.a || '';
+                            if (elB) elB.value = savedSub.b || '';
+                            if (elC) elC.value = savedSub.c || '';
+                            if (elD) elD.value = savedSub.d || '';
+                            if (elE) elE.value = savedSub.e || '';
+                        }
+                    }
+                }
             });
+            // 총점 재계산 실행
+            if (typeof calculateSubFactorsTotal === 'function') {
+                calculateSubFactorsTotal();
+            }
         }
 
         // 내 기존 점수 불러오기
