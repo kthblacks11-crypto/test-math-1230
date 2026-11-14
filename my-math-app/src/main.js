@@ -10524,7 +10524,7 @@ const exposeToWindow = {
     executeAnalysis, triggerSaveBackgroundAndReset, resetAnalysis, sendChatMessage,
     submitSpecificFeedback, acceptFeedback, rejectFeedback, updateMathPreview,
     startPartialCapture, pasteImageToQuestion, saveBankAndApplyTable, sendAiResultsToTable,
-    deleteProject, inviteCollaborator, kickFromProject, openProject, toggleGlobalEditMode,
+    deleteProject, renameProject, inviteCollaborator, kickFromProject, openProject, toggleGlobalEditMode,
     editManualAssessment, deleteAssessment, updateBaseDifficulty,
     updateBaseScore, saveMyInput, copyAiLevelsToMine, applyBatchDifficulty,
     calculateTotalCutScores, openSpecificFeedbackPanel, updateStep2Total, markAsReady, goToStep, updateQuestionCount,
