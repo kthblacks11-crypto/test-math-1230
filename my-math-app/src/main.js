@@ -7914,13 +7914,42 @@ function addSubFactorRow(savedData = null) {
 let isManualCompareMode = false; // 비교하기(토글) 상태 추적 변수
 let manualWorkspaceUnsubscribe = null; // 🟢 [추가] 수행평가 전용 CCTV (실시간 감시) 스위치 변수
 
-// 1. 수행평가 작업 공간 초기화 (해당 평가를 클릭했을 때 실행해주세요)
+// 1. 수행평가 작업 공간 초기화
 async function loadManualAssessmentWorkspace() {
-    if (!currentProjectId || currentEditingAssessmentIndex === -1) return;
+    if (!currentProjectId) return;
     
     const docRef = db.collection('user_projects').doc(currentProjectId);
 
-    // 💡 [기존 로직 완벽 보존] 내 데이터는 최초 1회만 고정해서 불러옵니다.
+    // 💡 1. 신규 생성 모드(-1)일 때는 화면을 무조건 깨끗하게 비워줍니다!
+    if (currentEditingAssessmentIndex === -1) {
+        document.getElementById('manual-assess-name').value = '';
+        document.getElementById('manual-assess-weight').value = '';
+        document.getElementById('manual-a').value = '';
+        document.getElementById('manual-b').value = '';
+        document.getElementById('manual-c').value = '';
+        document.getElementById('manual-d').value = '';
+        document.getElementById('manual-e').value = '';
+        
+        // 🚨 핵심: 이전 평가의 하위요소(사랑, 행복, 기쁨 등) 잔재를 싹 지웁니다!
+        const subListEl = document.getElementById('sub-factors-list');
+        if (subListEl) subListEl.innerHTML = '';
+        
+        lockManualInputs(false);
+        const saveBtn = document.getElementById('btn-save-manual');
+        if (saveBtn) {
+            saveBtn.innerHTML = "💾 결과 저장하기";
+            saveBtn.style.background = "#ea580c";
+            saveBtn.disabled = false;
+        }
+        
+        // 우측 팀원 영역 및 현황판 초기화 텍스트 설정
+        const container = document.getElementById('partner-manual-fields-container');
+        if (container) container.innerHTML = `<p style="text-align:center; margin-top:2rem; color:#94a3b8;">신규 작성 중입니다. 저장 후 팀원 확인이 가능합니다.</p>`;
+        
+        return; // 신규이므로 DB 로드 과정을 건너뜁니다.
+    }
+
+    // 💡 2. 기존 수정 모드일 때의 기존 로직 수행
     try {
         const doc = await docRef.get();
         if (!doc.exists) return;
@@ -7929,17 +7958,29 @@ async function loadManualAssessmentWorkspace() {
         const asm = projectData.assessments[currentEditingAssessmentIndex];
         const myEmail = auth.currentUser.email;
 
-        isManualCompareMode = false; // 진입 시 무조건 비교창 닫음(가림) 상태로 초기화
+        isManualCompareMode = false; // 진입 시 무조건 비교창 닫음 상태로 초기화
+
+        // 하위요소 리스트 먼저 초기화 후 재구성
+        const subListEl = document.getElementById('sub-factors-list');
+        if (subListEl) subListEl.innerHTML = ''; 
+
+        // 만약 기존에 저장된 공통 하위요소(subFactors) 구조가 있다면 화면에 하위요소 줄들을 복원해 줍니다.
+        if (asm.subFactors && asm.subFactors.length > 0) {
+            asm.subFactors.forEach(sf => {
+                // 💡 선생님 웹앱에 이미 구현되어 있는 하위요소 행 추가 함수가 있다면 여기서 호출하여 sf.name과 sf.max를 채워넣어 주시면 됩니다.
+                // 예: addSubFactorRowWithData(sf.name, sf.max);
+            });
+        }
 
         // 내 기존 점수 불러오기
         if (asm.teacherManualScores && asm.teacherManualScores[myEmail]) {
             const mySaved = asm.teacherManualScores[myEmail];
-            document.getElementById('manual-a').value = mySaved.A; // 💡수정됨
-            document.getElementById('manual-b').value = mySaved.B; // 💡수정됨
-            document.getElementById('manual-c').value = mySaved.C; // 💡수정됨
-            document.getElementById('manual-d').value = mySaved.D; // 💡수정됨
-            document.getElementById('manual-e').value = mySaved.E; // 💡수정됨
-            lockManualInputs(true); // 이미 저장했다면 잠금
+            document.getElementById('manual-a').value = mySaved.A;
+            document.getElementById('manual-b').value = mySaved.B;
+            document.getElementById('manual-c').value = mySaved.C;
+            document.getElementById('manual-d').value = mySaved.D;
+            document.getElementById('manual-e').value = mySaved.E;
+            lockManualInputs(true);
             document.getElementById('btn-save-manual').innerHTML = "✅ 저장 완료";
             document.getElementById('btn-save-manual').style.background = "#10b981";
         } else {
@@ -7954,19 +7995,17 @@ async function loadManualAssessmentWorkspace() {
         console.error("수행평가 로드 실패:", e);
     }
 
-    // 💡 [최적화 & 실시간 반영 추가] 
-    // 기존에 켜진 CCTV가 있다면 끄고, 새로 켭니다.
+    // 실시간 감시(CCTV) 설정
     if (manualWorkspaceUnsubscribe) {
         manualWorkspaceUnsubscribe();
     }
 
-    // 이제 이 공간(수행평가 창)에 있는 동안, 상대방이 저장을 누르면 '대기->완료'로 실시간 자동 변경됩니다!
     manualWorkspaceUnsubscribe = docRef.onSnapshot((doc) => {
         if (!doc.exists) return;
         const projectData = doc.data();
         const asm = projectData.assessments[currentEditingAssessmentIndex];
+        if (!asm) return;
 
-        // ⚠️ 내 텍스트 박스는 건드리지 않고(타이핑 방해 금지), 오직 '상대방 데이터'와 '대기/완료 현황판'만 업데이트!
         renderPartnerManualData(asm, projectData);
         updateManualTableStatus(asm, projectData);
     });
@@ -8397,6 +8436,72 @@ function calculateSubFactorsTotal() {
         input.style.background = '#f1f5f9'; // 자동 완성되었음을 시각적으로 암시
     });
 }
+
+// ✨ [신규 추가] 수행평가 추가 버튼을 눌렀을 때 실행되는 깨끗한 창 열기 함수
+function openNewManualAssessmentModal() {
+    // 1. 신규 생성 모드(-1)로 설정
+    currentEditingAssessmentIndex = -1;
+
+    // 2. 이름 및 반영 비율 비우기
+    const nameInput = document.getElementById('manual-assess-name');
+    const weightInput = document.getElementById('manual-assess-weight');
+    if (nameInput) nameInput.value = '';
+    if (weightInput) weightInput.value = '';
+
+    // 3. 메인 A~E 컷오프 점수 입력칸 비우기
+    ['manual-a', 'manual-b', 'manual-c', 'manual-d', 'manual-e'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+            el.value = '';
+            el.readOnly = false;
+        }
+    });
+
+    // 🚨 4. 핵심! 이전 평가에 남아있던 하위요소(사랑, 행복, 기쁨 등) 목록 HTML을 완전히 삭제하여 비우기
+    const subListEl = document.getElementById('sub-factors-list');
+    if (subListEl) {
+        subListEl.innerHTML = ''; 
+    }
+
+    // 5. 입력 잠금 해제 및 저장 버튼 초기화
+    lockManualInputs(false);
+    const saveBtn = document.getElementById('btn-save-manual');
+    if (saveBtn) {
+        saveBtn.innerHTML = "💾 결과 저장하기";
+        saveBtn.style.background = "#ea580c";
+        saveBtn.disabled = false;
+    }
+
+    // 6. 팀원 영역 안내 문구 초기화
+    const partnerContainer = document.getElementById('partner-manual-fields-container');
+    if (partnerContainer) {
+        partnerContainer.innerHTML = `<p style="text-align:center; color:#94a3b8; font-size:0.9rem; margin-top:3rem;">신규 작성 중입니다. 저장 후 팀원 확인이 가능합니다.</p>`;
+    }
+
+    // 7. 현황판 안내 문구 초기화
+    const infoZone = document.getElementById('current-manual-assessment-info');
+    if (infoZone) {
+        infoZone.innerHTML = `<p style="margin:0; color:#64748b; text-align:center;">(수행평가를 목록에 등록하면 이곳에 협업 현황이 나타납니다)</p>`;
+        infoZone.style.background = "#f8fafc";
+        infoZone.style.border = "1px solid #cbd5e1";
+    }
+
+    // 8. 비교 버튼 비활성화 초기화
+    const compareBtn = document.getElementById('btn-compare-manual');
+    if (compareBtn) {
+        compareBtn.disabled = true;
+        compareBtn.style.background = "#94a3b8";
+        compareBtn.style.cursor = "not-allowed";
+        compareBtn.innerHTML = "📊 비교하기 (대기)";
+    }
+
+    // 9. 모달 팝업 창 화면에 띄우기
+    const modal = document.getElementById('manual-assessment-modal');
+    if (modal) {
+        modal.style.display = 'flex'; // 혹은 'block'
+    }
+}
+
 
 // ✨ 3. 화면에 있는 입력창 값들을 그대로 읽어와서 진짜 DB를 수정하는 마법의 함수
 async function acceptFeedback(feedbackId) {
@@ -10450,7 +10555,7 @@ const exposeToWindow = {
     toggleLatexHelper, closeLatexHelper, insertLatex, runTweezerRepair,
     // 👇👇👇 여기에 새로운 수행평가 함수 3가지를 추가했습니다! 👇👇👇
     openPerformanceMaker, populatePerformanceStandards, executePerformanceGeneration, addPerfStandardSelect,
-    downloadPerfAsPDF, exportToGoogleDocs, downloadPerfAsWord
+    downloadPerfAsPDF, exportToGoogleDocs, downloadPerfAsWord, openManualAssessmentModal
 };
 
 for (const [fnName, fn] of Object.entries(exposeToWindow)) {
