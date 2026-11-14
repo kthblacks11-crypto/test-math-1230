@@ -5355,8 +5355,6 @@ function rearrangeQuestionNumbers() {
 }
 
 
-
-
 // ✨ 수행평가 수정 창 열기 함수 (최종 정돈 버전)
 function editManualAssessment(index) {
     currentEditingAssessmentIndex = index;
@@ -10540,14 +10538,14 @@ const exposeToWindow = {
     prevLevelQuestion, skipLevelQuestion, saveAndClosePassageTray,   clearAllPassages,
     resetChecklist, openJournalModal, closeJournalModal, saveJournalEntry, deleteJournalEntry, saveUserSubjectGroup,
     silentSaveChecklist, downloadAllJournalsExcel, cancelSubjectSelection, initDictionaryDrag, markAsModified,
-    openCompareModal, resetMCutScores, enableMEditMode,
+    openCompareModal, resetMCutScores, enableMEditMode, openNewManualAssessmentModal,
 
     loadManualAssessmentWorkspace, toggleManualCompareMode, saveManualAssessmentToProject, enableManualEditMode,
     resetManualScores, syncManualStructureFromDB, addManualTableQuestion, openReadOnlyExamViewer,
     toggleLatexHelper, closeLatexHelper, insertLatex, runTweezerRepair,
     // 👇👇👇 여기에 새로운 수행평가 함수 3가지를 추가했습니다! 👇👇👇
     openPerformanceMaker, populatePerformanceStandards, executePerformanceGeneration, addPerfStandardSelect,
-    downloadPerfAsPDF, exportToGoogleDocs, downloadPerfAsWord, openNewManualAssessmentModal
+    downloadPerfAsPDF, exportToGoogleDocs, downloadPerfAsWord
 };
 
 for (const [fnName, fn] of Object.entries(exposeToWindow)) {
