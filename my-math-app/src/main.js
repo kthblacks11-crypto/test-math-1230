@@ -379,45 +379,6 @@ function saveApiKey() {
     }
 }
 
-// 💡 과목별 분할 캐싱 및 지연 로딩(JIT) 엔진
-async function loadQuestionsForSubject(subjectName) {
-    if (!subjectName || subjectName === 'uncategorized') return [];
-
-    const storageKey = `secret_questions_${subjectName}`;
-    const cached = localStorage.getItem(storageKey);
-
-    if (cached) {
-        console.log(`⚡ [지연 로딩] ${subjectName} 데이터를 로컬 캐시에서 불러옵니다.`);
-        return JSON.parse(cached);
-    }
-
-    try {
-        console.log(`🔄 [지연 로딩] ${subjectName} 데이터를 서버에서 가져옵니다.`);
-        const snapshot = await db.collection('transformed_bank')
-                                 .where('subject', '==', subjectName)
-                                 .get();
-        const questions = [];
-        snapshot.forEach(doc => {
-            const data = doc.data();
-            if (data.isDeleted !== true) {
-                questions.push({ id: doc.id, ...data });
-            }
-        });
-
-        // 안전하게 로컬 저장 시도 (용량 초과 시 예외 방어)
-        try {
-            localStorage.setItem(storageKey, JSON.stringify(questions));
-        } catch (storageErr) {
-            console.warn("⚠️ 기기 저장 공간 부족으로 캐시 저장은 생략합니다.", storageErr);
-        }
-
-        return questions;
-    } catch (e) {
-        console.error("데이터 로드 실패:", e);
-        return [];
-    }
-}
-
 // 🛠️ 교체 1: DB 변경 알림판(메타데이터) 갱신 도우미 (V8 문법 적용 및 window.db 에러 해결)
 async function markSubjectAsUpdated(subjectCode) {
     if (!subjectCode || subjectCode === 'uncategorized') return 0;
@@ -1685,6 +1646,45 @@ function changeGroup(groupId) {
     
     // 과목을 변경했으니 화면 전체 새로고침
     changeSubject();
+}
+
+// 💡 과목별 분할 캐싱 및 지연 로딩(JIT) 엔진
+async function loadQuestionsForSubject(subjectName) {
+    if (!subjectName || subjectName === 'uncategorized') return [];
+
+    const storageKey = `secret_questions_${subjectName}`;
+    const cached = localStorage.getItem(storageKey);
+
+    if (cached) {
+        console.log(`⚡ [지연 로딩] ${subjectName} 데이터를 로컬 캐시에서 불러옵니다.`);
+        return JSON.parse(cached);
+    }
+
+    try {
+        console.log(`🔄 [지연 로딩] ${subjectName} 데이터를 서버에서 가져옵니다.`);
+        const snapshot = await db.collection('transformed_bank')
+                                 .where('subject', '==', subjectName)
+                                 .get();
+        const questions = [];
+        snapshot.forEach(doc => {
+            const data = doc.data();
+            if (data.isDeleted !== true) {
+                questions.push({ id: doc.id, ...data });
+            }
+        });
+
+        // 안전하게 로컬 저장 시도 (용량 초과 시 예외 방어)
+        try {
+            localStorage.setItem(storageKey, JSON.stringify(questions));
+        } catch (storageErr) {
+            console.warn("⚠️ 기기 저장 공간 부족으로 캐시 저장은 생략합니다.", storageErr);
+        }
+
+        return questions;
+    } catch (e) {
+        console.error("데이터 로드 실패:", e);
+        return [];
+    }
 }
 
 // 🌟 2. 수정된 changeSubject() 함수
