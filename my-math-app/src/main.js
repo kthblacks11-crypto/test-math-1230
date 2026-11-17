@@ -13,8 +13,8 @@ let currentUserGroup = 'math'; // 기본 교과군
 
 let currentEditingAssessmentIndex = -1;
 
-// 🌟 범용 비밀수첩 메모리 로드
-window.secretQuestions = JSON.parse(localStorage.getItem('all_secret_questions')) || [];
+// 🌟 과목별 온디맨드 지연 로딩을 위한 현재 과목 문항 전용 메모리
+let currentSubjectQuestions = [];
 
 const firebaseConfig = {
   apiKey: "AIzaSyD16bomCtDrDppZwDXKvInV9fvfww_qj00",
@@ -67,7 +67,7 @@ const auth = firebase.auth();
 const provider = new firebase.auth.GoogleAuthProvider();
 const storage = firebase.storage();
 
-const CURRENT_VERSION = "1.2.12"; 
+const CURRENT_VERSION = "1.2.13"; 
 // 2026년 9월 14일 최종수정처리됨
 // 읽기 횟수를 절약하는 버전 체크 방식 (onSnapshot 대신 get 사용)
 function startAppVersionCheck() {
@@ -376,6 +376,45 @@ function saveApiKey() {
         localStorage.setItem('gemini_api_key', key);
         alert("API 키가 기기에 안전하게 저장되었습니다.");
         closeSettings();
+    }
+}
+
+// 💡 과목별 분할 캐싱 및 지연 로딩(JIT) 엔진
+async function loadQuestionsForSubject(subjectName) {
+    if (!subjectName || subjectName === 'uncategorized') return [];
+
+    const storageKey = `secret_questions_${subjectName}`;
+    const cached = localStorage.getItem(storageKey);
+
+    if (cached) {
+        console.log(`⚡ [지연 로딩] ${subjectName} 데이터를 로컬 캐시에서 불러옵니다.`);
+        return JSON.parse(cached);
+    }
+
+    try {
+        console.log(`🔄 [지연 로딩] ${subjectName} 데이터를 서버에서 가져옵니다.`);
+        const snapshot = await db.collection('transformed_bank')
+                                 .where('subject', '==', subjectName)
+                                 .get();
+        const questions = [];
+        snapshot.forEach(doc => {
+            const data = doc.data();
+            if (data.isDeleted !== true) {
+                questions.push({ id: doc.id, ...data });
+            }
+        });
+
+        // 안전하게 로컬 저장 시도 (용량 초과 시 예외 방어)
+        try {
+            localStorage.setItem(storageKey, JSON.stringify(questions));
+        } catch (storageErr) {
+            console.warn("⚠️ 기기 저장 공간 부족으로 캐시 저장은 생략합니다.", storageErr);
+        }
+
+        return questions;
+    } catch (e) {
+        console.error("데이터 로드 실패:", e);
+        return [];
     }
 }
 
@@ -1648,6 +1687,7 @@ function changeGroup(groupId) {
     changeSubject();
 }
 
+// 🌟 2. 수정된 changeSubject() 함수
 async function changeSubject() {
     currentSubject = document.getElementById('detail-subjects').value;
     
@@ -1660,10 +1700,16 @@ async function changeSubject() {
         subTitleEl.innerText = "이 과목의 성취기준 데이터가 아직 등록되지 않았습니다.";
     }
     
-    // 🌟 2. DB 전체 다운로드 대신 비밀수첩에서 '0초' 만에 개수 세기 (할당량 폭발 차단)
-    updateCountsFromSecretNotebook();
+    // 🌟 [핵심 변경 1] 전체를 한 번에 긁어오는 것 대신, 선택한 과목 문항만 지연 로딩(JIT)으로 가져옴!
+    currentSubjectQuestions = await loadQuestionsForSubject(currentSubject);
 
-    // 🌟 3. [핵심] 3가지 화면 모두 즉시 새로고침 (선생님 코드 100% 유지)
+    // 💡 [치트키] 기존에 window.secretQuestions를 참조하던 23곳을 전혀 고치지 않도록 동기화!
+    window.secretQuestions = currentSubjectQuestions;
+
+    // 🌟 [핵심 변경 2] 수첩 개수 세기 (이미 해당 과목 문항만 들어있으므로 과목 필터링 조건이 필요 없어짐)
+    updateCountsFromSubjectCache();
+
+    // 🌟 3. [핵심] 3가지 화면 모두 즉시 새로고침 (선생님 기존 코드 100% 유지)
     initDashboard(); 
     if (typeof initChecklist === 'function') initChecklist(); 
     if (typeof populatePerformanceStandards === 'function') populatePerformanceStandards();
@@ -1674,8 +1720,33 @@ async function changeSubject() {
     if (document.getElementById('quiz-standard-selection')) document.getElementById('quiz-standard-selection').style.display = 'block';
     if (document.getElementById('quiz-level-matching')) document.getElementById('quiz-level-matching').style.display = 'none';
 
-    // 🌟 4. 백그라운드에서 서버와 개수를 단 1회 비교하여 최신화 여부 결정
-    syncWithDatabaseSilently();
+    // 🌟 4. 백그라운드 동기화 호출 (함수명이 기존에 쓰시던 것에 맞게 유지)
+    if (typeof syncSubjectQuestionsSilently === 'function') {
+        syncSubjectQuestionsSilently(currentSubject);
+    } else if (typeof syncWithDatabaseSilently === 'function') {
+        syncWithDatabaseSilently();
+    }
+}
+
+// 🌟 3. 개수 세기 도우미 (과목 조건 검사가 빠져 훨씬 가벼워짐)
+function updateCountsFromSubjectCache() {
+    currentSubjectQCount = {};
+    currentSubjectQuestions.forEach(q => {
+        const stdCodes = q.standard_code;
+        if (Array.isArray(stdCodes)) {
+            stdCodes.forEach(code => {
+                if (code && code !== "unknown" && code !== "코드없음") {
+                    const cleanCode = code.replace(/[\[\]\s]/g, '');
+                    currentSubjectQCount[cleanCode] = (currentSubjectQCount[cleanCode] || 0) + 1;
+                }
+            });
+        } else if (typeof stdCodes === 'string') {
+            if (stdCodes && stdCodes !== "unknown" && stdCodes !== "코드없음") {
+                const cleanCode = stdCodes.replace(/[\[\]\s]/g, '');
+                currentSubjectQCount[cleanCode] = (cleanCode || 0) + 1;
+            }
+        }
+    });
 }
 
 // 🛠️ 새로 추가: 수첩에서 개수 세기 도우미
