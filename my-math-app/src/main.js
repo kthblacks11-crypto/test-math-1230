@@ -126,6 +126,22 @@ auth.onAuthStateChanged(async (user) => {
         if (!isDbLoaded && dbLoadPromise) {
             await dbLoadPromise;
         }
+
+        // ==========================================
+        // ✨ [핵심 추가] 로그인 이력 자동 누적 및 기록
+        // ==========================================
+        try {
+            const loginLogRef = db.collection('user_login_logs').doc(user.uid);
+            await loginLogRef.set({
+                email: user.email,
+                nickname: user.displayName || "선생님",
+                lastLogin: firebase.firestore.FieldValue.serverTimestamp(),
+                loginCount: firebase.firestore.FieldValue.increment(1) // 접속할 때마다 횟수 1씩 누적
+            }, { merge: true });
+        } catch (err) {
+            console.warn("로그인 이력 기록 실패:", err);
+        }
+        // ==========================================
       
         // [공통 적용 UI]
         if(loginBtn) loginBtn.style.display = 'none';
