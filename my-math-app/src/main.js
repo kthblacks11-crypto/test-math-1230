@@ -1008,18 +1008,27 @@ async function executeAnalysis() {
         }
         
         const data = await response.json();
-        if (data.error) {
-            let errMsg = data.error.message || "";
-            let koreanError = "구글 AI가 응답을 거부했습니다.";
-            
-            if (errMsg.includes("API key not valid")) koreanError = "입력하신 API 키가 유효하지 않습니다. 키를 다시 확인해주세요.";
-            else if (errMsg.includes("models/") || errMsg.includes("not found")) koreanError = "AI 모델 버전을 찾을 수 없습니다. 백엔드의 모델명을 확인해주세요.";
-            else if (errMsg.includes("quota") || errMsg.includes("RESOURCE_EXHAUSTED")) koreanError = "무료 사용량(할당량) 한도를 초과했습니다! API 키를 새로 발급받아 갱신해주세요.";
-            else if (errMsg.includes("high demand") || errMsg.includes("overloaded")) koreanError = "현재 구글 서버에 접속자가 많아 지연되고 있습니다. 잠시 후 다시 시도해주세요.";
-            else koreanError = "AI 분석 오류: " + errMsg;
+            if (data.error) {
+                const rawErrorObj = typeof data.error === 'object' ? data.error : null;
+                const errMsg = rawErrorObj?.message || (typeof data.error === 'string' ? data.error : "");
+                const detailMsg = data.details ? ` (${data.details})` : "";
 
-            throw new Error(koreanError);
-        }
+                let koreanError = "구글 AI가 응답을 거부했습니다.";
+
+                if (errMsg.includes("API key not valid") || errMsg.includes("API Key is missing")) {
+                    koreanError = "API 키가 없거나 유효하지 않습니다. 설정에서 API 키를 확인해주세요.";
+                } else if (errMsg.includes("models/") || errMsg.includes("not found") || detailMsg.includes("404")) {
+                    koreanError = "AI 모델 버전을 찾을 수 없습니다. 백엔드의 모델명을 확인해주세요." + detailMsg;
+                } else if (errMsg.includes("quota") || errMsg.includes("RESOURCE_EXHAUSTED") || detailMsg.includes("429")) {
+                    koreanError = "무료 사용량(할당량) 한도를 초과했습니다! API 키를 새로 발급받아 갱신해주세요." + detailMsg;
+                } else if (errMsg.includes("high demand") || errMsg.includes("overloaded") || detailMsg.includes("503")) {
+                    koreanError = "현재 구글 서버에 접속자가 많아 지연되고 있습니다. 잠시 후 다시 시도해주세요." + detailMsg;
+                } else {
+                    koreanError = `AI 분석 오류: ${errMsg || "분석 실패"}${detailMsg}`;
+                }
+
+                throw new Error(koreanError);
+            }
         const analysisText = data.candidates[0].content.parts[0].text;
         currentChatContext = analysisText;
 
