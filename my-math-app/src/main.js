@@ -1664,18 +1664,104 @@ function changeGroup(groupId) {
     changeSubject();
 }
 
-// 💡 과목별 분할 캐싱 및 지연 로딩(JIT) 엔진
+// 🌟 0. 용량 걱정 없는 IndexedDB 캐시 매니저 + 레거시 localStorage 자동 정리
+const SecretNotebookDB = {
+    dbName: 'SecretNotebookCacheDB',
+    storeName: 'subject_questions',
+    version: 1,
+    _cleanedLegacy: false,
+
+    cleanupLegacyLocalStorage() {
+        if (this._cleanedLegacy) return;
+        this._cleanedLegacy = true;
+        try {
+            localStorage.removeItem('all_secret_questions');
+            Object.keys(localStorage)
+                .filter(k => k.startsWith('secret_questions_'))
+                .forEach(k => localStorage.removeItem(k));
+        } catch (e) {
+            console.warn('레거시 localStorage 정리 중 경고:', e);
+        }
+    },
+
+    open() {
+        this.cleanupLegacyLocalStorage();
+        return new Promise((resolve, reject) => {
+            const req = indexedDB.open(this.dbName, this.version);
+            req.onupgradeneeded = (e) => {
+                const idb = e.target.result;
+                if (!idb.objectStoreNames.contains(this.storeName)) {
+                    idb.createObjectStore(this.storeName);
+                }
+            };
+            req.onsuccess = () => resolve(req.result);
+            req.onerror = () => reject(req.error);
+        });
+    },
+
+    async get(key) {
+        try {
+            const idb = await this.open();
+            return await new Promise((resolve, reject) => {
+                const tx = idb.transaction(this.storeName, 'readonly');
+                const store = tx.objectStore(this.storeName);
+                const req = store.get(key);
+                req.onsuccess = () => resolve(req.result || null);
+                req.onerror = () => reject(req.error);
+            });
+        } catch (e) {
+            console.warn('IndexedDB 읽기 실패:', e);
+            return null;
+        }
+    },
+
+    async set(key, value) {
+        try {
+            const idb = await this.open();
+            return await new Promise((resolve, reject) => {
+                const tx = idb.transaction(this.storeName, 'readwrite');
+                const store = tx.objectStore(this.storeName);
+                const req = store.put(value, key);
+                req.onsuccess = () => resolve(true);
+                req.onerror = () => reject(req.error);
+            });
+        } catch (e) {
+            console.warn('IndexedDB 저장 실패:', e);
+            return false;
+        }
+    },
+
+    async remove(key) {
+        try {
+            const idb = await this.open();
+            return await new Promise((resolve, reject) => {
+                const tx = idb.transaction(this.storeName, 'readwrite');
+                const store = tx.objectStore(this.storeName);
+                const req = store.delete(key);
+                req.onsuccess = () => resolve(true);
+                req.onerror = () => reject(req.error);
+            });
+        } catch (e) {
+            return false;
+        }
+    }
+};
+
+
+// 🌟 1. IndexedDB 기반 과목별 온디맨드 지연 로딩(JIT) 엔진
 async function loadQuestionsForSubject(subjectName) {
     if (!subjectName || subjectName === 'uncategorized') return [];
 
     const storageKey = `secret_questions_${subjectName}`;
-    const cached = localStorage.getItem(storageKey);
 
-    if (cached) {
-        console.log(`⚡ [지연 로딩] ${subjectName} 데이터를 로컬 캐시에서 불러옵니다.`);
-        return JSON.parse(cached);
+    // 1) IndexedDB 캐시 우선 조회
+    const cached = await SecretNotebookDB.get(storageKey);
+    if (cached && Array.isArray(cached)) {
+        console.log(`⚡ [지연 로딩] ${subjectName} 데이터를 IndexedDB에서 0초 만에 불러옵니다. (${cached.length}문항)`);
+        return cached;
     }
 
+    // 2) 캐시가 없으면 Firestore에서 해당 과목만 조회
     try {
         console.log(`🔄 [지연 로딩] ${subjectName} 데이터를 서버에서 가져옵니다.`);
         const snapshot = await db.collection('transformed_bank')
@@ -1689,13 +1775,15 @@ async function loadQuestionsForSubject(subjectName) {
             }
         });
 
-        // 안전하게 로컬 저장 시도 (용량 초과 시 예외 방어)
-        try {
-            localStorage.setItem(storageKey, JSON.stringify(questions));
-        } catch (storageErr) {
-            console.warn("⚠️ 기기 저장 공간 부족으로 캐시 저장은 생략합니다.", storageErr);
+        // 3) IndexedDB에 저장 (localStorage 용량 제한 회피)
+        await SecretNotebookDB.set(storageKey, questions);
+
+        // 방금 서버에서 최신 전체 목록을 받아왔으므로 기준 시각 기록 (불필요한 중복 풀스캔 방지)
+        if (!localStorage.getItem(`sync_time_${subjectName}`)) {
+            localStorage.setItem(`sync_time_${subjectName}`, Date.now().toString());
         }
 
+        console.log(`💾 [캐시 완료] ${subjectName} (${questions.length}문항) IndexedDB 저장 완료`);
         return questions;
     } catch (e) {
         console.error("데이터 로드 실패:", e);
@@ -1703,31 +1791,32 @@ async function loadQuestionsForSubject(subjectName) {
     }
 }
 
+
 // 🌟 2. 수정된 changeSubject() 함수
 async function changeSubject() {
     currentSubject = document.getElementById('detail-subjects').value;
-    
+
     // 1. 부제목(단원명 등) 업데이트
     const data = subjectData[currentSubject];
     const subTitleEl = document.getElementById('main-subtitle');
-    if (data) { 
-        subTitleEl.innerText = "[" + data.title + "] " + (data.subtitle || "과목 정보가 등록되어 있습니다."); 
+    if (data) {
+        subTitleEl.innerText = "[" + data.title + "] " + (data.subtitle || "과목 정보가 등록되어 있습니다.");
     } else {
         subTitleEl.innerText = "이 과목의 성취기준 데이터가 아직 등록되지 않았습니다.";
     }
-    
-    // 🌟 [핵심 변경 1] 전체를 한 번에 긁어오는 것 대신, 선택한 과목 문항만 지연 로딩(JIT)으로 가져옴!
+
+    // 2. 선택한 과목 문항만 IndexedDB/서버에서 지연 로딩
     currentSubjectQuestions = await loadQuestionsForSubject(currentSubject);
 
-    // 💡 [치트키] 기존에 window.secretQuestions를 참조하던 23곳을 전혀 고치지 않도록 동기화!
+    // 기존 window.secretQuestions 참조 호환 유지
     window.secretQuestions = currentSubjectQuestions;
 
-    // 🌟 [핵심 변경 2] 수첩 개수 세기 (이미 해당 과목 문항만 들어있으므로 과목 필터링 조건이 필요 없어짐)
+    // 3. 수첩 개수 세기
     updateCountsFromSubjectCache();
 
-    // 🌟 3. [핵심] 3가지 화면 모두 즉시 새로고침 (선생님 기존 코드 100% 유지)
-    initDashboard(); 
-    if (typeof initChecklist === 'function') initChecklist(); 
+    // 4. 3가지 화면 즉시 새로고침
+    initDashboard();
+    if (typeof initChecklist === 'function') initChecklist();
     if (typeof populatePerformanceStandards === 'function') populatePerformanceStandards();
 
     const perfSubjNameEl = document.getElementById('perf-subject-name');
@@ -1736,7 +1825,7 @@ async function changeSubject() {
     if (document.getElementById('quiz-standard-selection')) document.getElementById('quiz-standard-selection').style.display = 'block';
     if (document.getElementById('quiz-level-matching')) document.getElementById('quiz-level-matching').style.display = 'none';
 
-    // 🌟 4. 백그라운드 동기화 호출 (함수명이 기존에 쓰시던 것에 맞게 유지)
+    // 5. 백그라운드 핀셋 동기화
     if (typeof syncSubjectQuestionsSilently === 'function') {
         syncSubjectQuestionsSilently(currentSubject);
     } else if (typeof syncWithDatabaseSilently === 'function') {
@@ -1744,22 +1833,22 @@ async function changeSubject() {
     }
 }
 
-// 🌟 3. 개수 세기 도우미 (과목 조건 검사가 빠져 훨씬 가벼워짐)
+// 🌟 4. 개수 세기 도우미 (문자열 코드 누락/오타 수정 완료)
 function updateCountsFromSubjectCache() {
     currentSubjectQCount = {};
-    currentSubjectQuestions.forEach(q => {
+    (currentSubjectQuestions || []).forEach(q => {
         const stdCodes = q.standard_code;
         if (Array.isArray(stdCodes)) {
             stdCodes.forEach(code => {
                 if (code && code !== "unknown" && code !== "코드없음") {
-                    const cleanCode = code.replace(/[\[\]\s]/g, '');
+                    const cleanCode = String(code).replace(/[\[\]\s]/g, '');
                     currentSubjectQCount[cleanCode] = (currentSubjectQCount[cleanCode] || 0) + 1;
                 }
             });
         } else if (typeof stdCodes === 'string') {
             if (stdCodes && stdCodes !== "unknown" && stdCodes !== "코드없음") {
                 const cleanCode = stdCodes.replace(/[\[\]\s]/g, '');
-                currentSubjectQCount[cleanCode] = (cleanCode || 0) + 1;
+                currentSubjectQCount[cleanCode] = (currentSubjectQCount[cleanCode] || 0) + 1;
             }
         }
     });
@@ -1791,72 +1880,77 @@ function updateCountsFromSecretNotebook() {
 }
 
 
-// 🛠️ 교체 2: 궁극의 핀셋 데이터 동기화 도우미 (V8 문법 + 기존 데이터 증발 방지 로직 적용)
+// 🌟 3. IndexedDB와 연동된 백그라운드 핀셋 동기화 함수
 async function syncWithDatabaseSilently() {
-    if (!currentSubject || currentSubject === 'uncategorized') return;
+    const targetSubject = currentSubject;
+    if (!targetSubject || targetSubject === 'uncategorized') return;
 
     try {
-        // 1. 단 1 Read: 해당 과목의 마지막 업데이트 시간(알림판) 확인
+        // 1. 알림판(subject_updates)에서 마지막 수정 시각 확인
         const metaRef = db.collection('system_metadata').doc('subject_updates');
         const metaDoc = await metaRef.get();
-        const serverTime = metaDoc.exists ? (metaDoc.data()[currentSubject] || 0) : 0;
-        
-        const localTime = parseInt(localStorage.getItem(`sync_time_${currentSubject}`) || "0");
+        const serverTime = metaDoc.exists ? (metaDoc.data()[targetSubject] || 0) : 0;
 
-        // 2. 서버 시간이 로컬보다 최신인 경우에만 핀셋 동기화 시작
-        if (serverTime > localTime || localTime === 0) {
-            console.log(`🔄 [버전 감지] ${currentSubject} 핀셋 동기화 진행...`);
-            
+        const syncKey = `sync_time_${targetSubject}`;
+        const storageKey = `secret_questions_${targetSubject}`;
+        const localTime = parseInt(localStorage.getItem(syncKey) || "0", 10);
+
+        // 서버 알림판 시간이 로컬 기준 시각보다 클 때만 동기화 진행
+        if (serverTime > localTime) {
+            console.log(`🔄 [버전 감지] ${targetSubject} 핀셋 동기화 진행...`);
+
+            // 현재 과목 기준 문항 목록 확보
+            let subjectList = Array.isArray(currentSubjectQuestions) && currentSubject === targetSubject
+                ? [...currentSubjectQuestions]
+                : (await SecretNotebookDB.get(storageKey)) || [];
+
             if (localTime === 0) {
-                // 🌟 2-A. 최초 접속: DB 쿼리에서 isDeleted를 거르지 않고 모두 가져온 뒤 JS에서 거름 (기존 데이터 증발 방지 핵심)
                 const snapshot = await db.collection('transformed_bank')
-                                         .where('subject', '==', currentSubject)
+                                         .where('subject', '==', targetSubject)
                                          .get();
-                
+
                 const freshQuestions = [];
                 snapshot.forEach(doc => {
                     const data = doc.data();
-                    // JS 단에서 가짜 삭제된 문항만 제외 (필드가 아예 없는 과거 데이터 완벽 보존)
                     if (data.isDeleted !== true) {
                         freshQuestions.push({ id: doc.id, ...data });
                     }
                 });
-                
-                window.secretQuestions = window.secretQuestions.filter(q => q.subject !== currentSubject);
-                window.secretQuestions = [...window.secretQuestions, ...freshQuestions];
+                subjectList = freshQuestions;
             } else {
-                // 🌟 2-B. 핀셋 로직: "내가 마지막으로 본 시간 이후에 수정/삭제된 것만 줘!"
                 const lastSyncDate = new Date(localTime);
                 const snapshot = await db.collection('transformed_bank')
-                                         .where('subject', '==', currentSubject)
+                                         .where('subject', '==', targetSubject)
                                          .where('timestamp', '>', lastSyncDate)
                                          .get();
-                
+
                 snapshot.forEach(doc => {
                     const data = doc.data();
-                    const idx = window.secretQuestions.findIndex(q => q.id === doc.id);
-                    
+                    const idx = subjectList.findIndex(q => q.id === doc.id);
+
                     if (data.isDeleted === true) {
-                        // 🗑️ 지워진 문항이면 수첩에서 빼기
-                        if (idx !== -1) window.secretQuestions.splice(idx, 1);
+                        if (idx !== -1) subjectList.splice(idx, 1);
                     } else {
-                        // ✍️ 새로 추가됐거나 수정된 문항이면 덮어쓰거나 끼워넣기
                         if (idx !== -1) {
-                            window.secretQuestions[idx] = { id: doc.id, ...data };
+                            subjectList[idx] = { id: doc.id, ...data };
                         } else {
-                            window.secretQuestions.push({ id: doc.id, ...data });
+                            subjectList.push({ id: doc.id, ...data });
                         }
                     }
                 });
             }
 
-            // 3. 수첩 저장 및 시간 갱신
-            localStorage.setItem('all_secret_questions', JSON.stringify(window.secretQuestions));
-            localStorage.setItem(`sync_time_${currentSubject}`, serverTime.toString());
+            // localStorage가 아닌 IndexedDB에 과목별로 저장
+            await SecretNotebookDB.set(storageKey, subjectList);
+            localStorage.setItem(syncKey, serverTime.toString());
 
-            // 4. 화면 즉시 새로고침
-            updateCountsFromSecretNotebook();
-            initDashboard();
+            // 사용자가 여전히 같은 과목을 보고 있다면 메모리와 화면도 즉시 갱신
+            if (currentSubject === targetSubject) {
+                currentSubjectQuestions = subjectList;
+                window.secretQuestions = currentSubjectQuestions;
+                updateCountsFromSubjectCache();
+                initDashboard();
+            }
         }
     } catch (e) {
         console.warn("백그라운드 동기화 실패:", e);
